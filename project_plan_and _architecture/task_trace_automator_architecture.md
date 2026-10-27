@@ -195,7 +195,7 @@ It outputs a `ContextPackage` with files to read, files allowed to change, prote
 | Block / unblock with reason | Status `Blocked` plus a comment, optional `blocked` label | Reason is stored in the comment and in the audit log |
 | Event on move to TODO | Webhook `projects_v2_item` (edited) | **Organization-level webhook only** |
 | Event on issue edits/comments | Webhooks `issues`, `issue_comment` | Repository level |
-| Link PR and evidence | `Closes #n` in PR, plus a comment with the report | |
+| Link PR and evidence | `Closes #n` in PR (if PR creation is enabled), plus a comment with the report and branch link | PR is optional |
 
 Differences that matter, and how they are handled:
 - **No enforced workflow transitions.** GitHub lets anyone drag a card anywhere. TaskTraceAutomator validates every incoming status change against its own state machine, and reverts the card (with an explanatory comment) if the move is illegal. This is stricter than Jira's default setup, not weaker.
@@ -215,7 +215,7 @@ Triggered when a managed issue or sub-issue enters **TODO**:
 2. Create `CodingRun`, move the card to **In Progress**.
 3. Build or load the `ContextPackage`.
 4. Launch the runner container (section 6).
-5. Collect results, run verification, then open the PR or escalate.
+5. Collect results, run verification, then push the branch and, if the project's `create_pull_request` setting is on, open the PR; otherwise post the branch link and diff as the handoff. Escalate on failure.
 
 ### 5.7 Coding Agent adapter (`agents/coding_agent`)
 - Calls **Claude Code CLI in headless mode** (`claude -p`) inside the runner with a generated prompt file built from the ticket, plan, context package, and path policy. The prompt keeps instructions separate from untrusted content.
@@ -263,7 +263,10 @@ sequenceDiagram
     R->>R: scope + secret scan before leaving
     R->>R: tests, lint, security scans
     R-->>W: result.json + diff + logs
-    W->>G: push branch, open PR (bot token)
+    W->>G: push branch (bot token)
+    opt create_pull_request enabled
+        W->>G: open PR
+    end
     W->>D: remove container
 ```
 
@@ -271,7 +274,7 @@ Controls (all free, using Docker features):
 - CPU, memory, and PID limits; read-only root filesystem with a writable `/workspace`.
 - Non-root user; `--cap-drop ALL`; no Docker socket mounted into the runner.
 - Network restricted to the Anthropic API, the GitHub host, and package registries via an egress proxy or Docker network allow-list (tinyproxy or squid).
-- The GitHub token given to the runner is a **fine-grained PAT** limited to one repo with contents and pull-request write. Branch protection on `main` prevents merge without review, so the agent cannot merge.
+- The GitHub token given to the runner is a **fine-grained PAT** limited to one repo with contents write (plus pull-request write only when PR creation is enabled). Branch protection on `main` prevents merge without review, so the agent cannot merge.
 - Scope is enforced **outside the model**: after the run the worker diffs against the allow-list and rejects violations regardless of what the agent claims.
 
 ---
@@ -304,7 +307,7 @@ stateDiagram-v2
     HUMAN_REVIEW --> REPAIRING: changes requested
 ```
 
-**Durability without Temporal:** use `acks_late=True`, `task_reject_on_worker_lost=True`, per-activity idempotency keys stored in an `ActivityLog` table (`key`, `status`, `result_ref`), and a beat job that re-enqueues runs stuck in a non-terminal state past a timeout. External side effects (create issue, open PR) check `ActivityLog` and the stored external reference before acting.
+**Durability without Temporal:** use `acks_late=True`, `task_reject_on_worker_lost=True`, per-activity idempotency keys stored in an `ActivityLog` table (`key`, `status`, `result_ref`), and a beat job that re-enqueues runs stuck in a non-terminal state past a timeout. External side effects (create issue, open PR if enabled) check `ActivityLog` and the stored external reference before acting.
 
 ---
 
@@ -367,7 +370,7 @@ Server-rendered Django templates with **HTMX** for partial updates and **Alpine.
 | Meeting review | Transcript with highlighted source spans, requirement items with edit, split, delete, approve |
 | Plan review | Work items, acceptance criteria, allow-list editor, plan diff for changes |
 | Board | Columns for Backlog, TODO, In Progress, In Review, Blocked, Done; actions to move, comment, assign |
-| Run detail | Live status (HTMX polling every 3 s), logs, diff, verification report, PR link |
+| Run detail | Live status (HTMX polling every 3 s), logs, diff, verification report, branch link, PR link (if any) |
 | Audit timeline | Filterable event list per work item |
 
 ---
@@ -378,7 +381,7 @@ Server-rendered Django templates with **HTMX** for partial updates and **Alpine.
 |---|---|
 | Prompt injection from transcript, code, or issue text | Untrusted content wrapped in delimited blocks; Analyst has no tools; coding agent only receives approved plan; scope enforced after the run |
 | Secret leakage | gitleaks before push; regex redaction on transcripts and logs; secrets only in env |
-| Agent edits protected files | Post-run diff check against path policy; failure blocks PR |
+| Agent edits protected files | Post-run diff check against path policy; failure blocks the push/PR and the move to In Review |
 | Unauthorized actions | DRF permissions, approval-version checks, HMAC-verified webhooks |
 | Illegal board moves made directly on GitHub | State machine validates and reverts the card |
 | Duplicate or replayed commands | Idempotency keys, unique constraints, `WebhookEvent` dedupe by delivery ID |
@@ -476,7 +479,7 @@ task-trace-automator/
 | 1. Understand | Transcript upload, Analyst, requirement review UI, approvals | A draft package is corrected and approved |
 | 2. Plan | Planner, Context Builder, plan review with allow-list, plan versions | Reviewer can see why each file is in scope |
 | 3. Tracker | Issue creation, board UI, webhook and reconciliation, `PlanChange` sub-issues | Moving a card to TODO creates a queued run exactly once |
-| 4. Build and verify | Runner image, Claude Code adapter, scope enforcement, scanners, report, PR creation | A bad run (out-of-scope edit) is blocked; a good run opens a PR |
+| 4. Build and verify | Runner image, Claude Code adapter, scope enforcement, scanners, report, optional PR creation | A bad run (out-of-scope edit) is blocked; a good run pushes a branch and opens a PR when enabled |
 | 5. Hardening | Retry cap, crash recovery, duplicate and delayed webhook tests | Restarting a worker mid-run does not duplicate issues or PRs |
 | 6. Evaluation | Run fixed evaluation set, collect metrics | Report compares the staged agent against a manual baseline |
 

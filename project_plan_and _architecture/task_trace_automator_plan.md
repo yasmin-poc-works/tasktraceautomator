@@ -113,7 +113,7 @@ For a small, well-scoped change, a user should be able to move from “we discus
 - Runs one coding agent in an isolated branch or workspace.
 - Runs tests, linting, security checks, and scope checks.
 - Maps acceptance criteria to tests and verification evidence.
-- Opens or prepares a pull request for human review.
+- Optionally opens a GitHub pull request for human review (configurable per project); when disabled, hands off the branch, diff, and verification report instead.
 - Provides a Jira-backed workflow UI so users can manage approved work without opening Jira; backlog items and plan-change sub-tasks are created automatically, while status changes and comments are optional human actions.
 - Stores the workflow history and artifacts for later audit and learning.
 
@@ -277,7 +277,7 @@ The Verifier produces a report containing:
 - cost and duration;
 - final diff summary.
 
-The user reviews the diff and report, requests changes, or approves the pull request for normal repository review. The platform never merges automatically in the MVP.
+Opening a GitHub pull request is **optional** and controlled by a per-project setting (`create_pull_request`). When enabled, the user reviews the diff and report, requests changes, or approves the pull request for normal repository review. When disabled, the platform pushes (or retains) the isolated branch and presents the diff and verification report as the review handoff; the user may open a pull request manually. The platform never merges automatically in the MVP.
 
 The Jira lifecycle should be configurable but follow this default:
 
@@ -286,7 +286,7 @@ Backlog -> TODO -> In Progress -> In Review -> Done
                      \-> Blocked / Needs Approval
 ```
 
-**In Review** requires a pull request and verification report. **Done** requires the normal repository review outcome; it must not be set merely because Claude Code generated a diff.
+**In Review** requires a verification report and a reviewable handoff: a pull request when PR creation is enabled, otherwise the branch and diff. **Done** requires the normal repository review outcome; it must not be set merely because Claude Code generated a diff.
 
 ---
 
@@ -742,9 +742,11 @@ sequenceDiagram
     T->>J: Transition issue to In Progress
     T->>C: Dispatch approved ticket and bounded context
     C->>R: Work in isolated branch / workspace
-    C->>R: Open pull request
+    opt PR creation enabled
+        C->>R: Open pull request
+    end
     T->>T: Run verification and traceability checks
-    T->>J: Add PR, evidence, and status update
+    T->>J: Add PR (if any) or branch link, evidence, and status update
     T->>J: Transition issue to In Review or Blocked
 ```
 
@@ -830,7 +832,7 @@ The orchestration layer must distinguish:
 - **approval event:** an authorized human decision;
 - **external event:** a webhook or provider status update.
 
-Activities that call external systems must be idempotent or use a durable operation key. For example, creating a pull request should use a stored external reference and should not create a duplicate on retry.
+Activities that call external systems must be idempotent or use a durable operation key. For example, creating a pull request (when enabled) should use a stored external reference and should not create a duplicate on retry.
 
 ---
 
@@ -850,7 +852,7 @@ The MVP should support one narrow but complete path:
 8. Any post-approval plan modification becomes an approved Planner Agent sub-task under the parent issue.
 9. Moving a parent issue or approved sub-task to TODO automatically starts one Claude Code run in an isolated repository workspace.
 10. The Verifier runs configured tests and scope checks.
-11. The platform updates Jira with the pull request and verification evidence.
+11. The platform updates Jira with the verification evidence and the pull request (if enabled) or branch link.
 12. The user reviews the diff and normal repository review determines completion.
 
 ### 14.2 Explicit MVP exclusions

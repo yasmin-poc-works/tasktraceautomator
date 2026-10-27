@@ -10,7 +10,7 @@
 TaskTraceAutomator turns a meeting into a reviewed, verified pull request with every step traceable and every consequential step approved by a human.
 
 ```text
-Meeting  →  Requirements  →  Plan  →  Board ticket  →  Coding run  →  Verification  →  Pull request
+Meeting  →  Requirements  →  Plan  →  Board ticket  →  Coding run  →  Verification  →  Pull request (optional) / branch
               (approve)     (approve)    (move to TODO)                                   (human review)
 ```
 
@@ -21,7 +21,7 @@ Meeting  →  Requirements  →  Plan  →  Board ticket  →  Coding run  →  
 - Automatic creation of tickets on a GitHub Projects kanban board, with plan changes as sub-issues.
 - A TaskTrace board UI so users never need to open the tracker directly.
 - Automatic Claude Code run when a ticket moves to TODO, in an isolated container.
-- Automated verification, a traceability report, and a PR for human review.
+- Automated verification, a traceability report, and an optional PR (per-project `create_pull_request` setting) for human review; when off, the branch, diff, and report are the handoff.
 - Full audit trail.
 
 **Out of scope**
@@ -36,7 +36,7 @@ Meeting  →  Requirements  →  Plan  →  Board ticket  →  Coding run  →  
 |---|---|---|
 | 1 | One coding agent with staged responsibilities | Establish a baseline before adding complexity |
 | 2 | Typed, versioned artifacts instead of chat history | Auditable, resumable, reviewable |
-| 3 | Human approval at requirements, plan, plan changes, and final PR | Intent and code stay human-accountable |
+| 3 | Human approval at requirements, plan, plan changes, and final review (PR if enabled, otherwise branch diff) | Intent and code stay human-accountable |
 | 4 | GitHub Issues + Projects as the ticket system | Free, one platform with the code, and it covers backlog, status, comments, sub-issues, assignees, and webhooks. Users see the TaskTrace board, not the tracker |
 | 5 | Persisted state machine + Celery/Redis | Durable and free; replaces a workflow engine |
 | 6 | Scope and security enforced outside the model | The model is not trusted to police itself |
@@ -101,10 +101,12 @@ sequenceDiagram
     T->>C: Dispatch approved plan + context
     C->>R: Commit to isolated branch
     T->>T: Verify (tests, scans, scope, traceability)
-    T->>R: Open pull request
-    T->>B: Move to In Review, post evidence
+    opt PR creation enabled
+        T->>R: Open pull request
+    end
+    T->>B: Move to In Review, post evidence (PR or branch link)
     U->>R: Review and merge
-    R-->>T: Merge webhook
+    R-->>T: Merge webhook (PR mode) or user marks Done (no-PR mode)
     T->>B: Move to Done
 ```
 
