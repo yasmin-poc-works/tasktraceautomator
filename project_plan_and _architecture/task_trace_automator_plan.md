@@ -277,7 +277,7 @@ The Verifier produces a report containing:
 - cost and duration;
 - final diff summary.
 
-Opening a GitHub pull request is **optional** and controlled by a per-project setting (`create_pull_request`). When enabled, the user reviews the diff and report, requests changes, or approves the pull request for normal repository review. When disabled, the platform pushes (or retains) the isolated branch and presents the diff and verification report as the review handoff; the user may open a pull request manually. The platform never merges automatically in the MVP.
+Opening a GitHub pull request is a **good-to-have option**, controlled by a per-project setting (`create_pull_request`, default off). When enabled, the user reviews the diff and report, requests changes, or approves the pull request for normal repository review. When disabled, the platform pushes (or retains) the isolated branch and presents the diff and verification report as the review handoff; the user may open a pull request manually. The platform never merges automatically in the MVP.
 
 The Jira lifecycle should be configurable but follow this default:
 
@@ -852,7 +852,7 @@ The MVP should support one narrow but complete path:
 8. Any post-approval plan modification becomes an approved Planner Agent sub-task under the parent issue.
 9. Moving a parent issue or approved sub-task to TODO automatically starts one Claude Code run in an isolated repository workspace.
 10. The Verifier runs configured tests and scope checks.
-11. The platform updates Jira with the verification evidence and the pull request (if enabled) or branch link.
+11. The platform updates Jira with the verification evidence and the branch link. Opening a pull request is a good-to-have option, off by default, and adds the PR link when enabled.
 12. The user reviews the diff and normal repository review determines completion.
 
 ### 14.2 Explicit MVP exclusions

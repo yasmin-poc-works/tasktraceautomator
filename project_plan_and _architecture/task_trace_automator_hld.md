@@ -21,7 +21,9 @@ Meeting  →  Requirements  →  Plan  →  Board ticket  →  Coding run  →  
 - Automatic creation of tickets on a GitHub Projects kanban board, with plan changes as sub-issues.
 - A TaskTrace board UI so users never need to open the tracker directly.
 - Automatic Claude Code run when a ticket moves to TODO, in an isolated container.
-- Automated verification, a traceability report, and an optional PR (per-project `create_pull_request` setting) for human review; when off, the branch, diff, and report are the handoff.
+- Automated verification, a traceability report, and a branch handoff for human review. A GitHub PR is a good-to-have (per-project `create_pull_request` setting, default off).
+
+**Good-to-have** (not needed for the MVP): GitHub PR creation, audio transcription, MinIO storage, Prometheus/Grafana, free fallback coding agent, pgvector retrieval, other trackers (Jira, Linear, Plane), specialist agents, hosted deployment. See `implementation_plan/plan.md` §9.
 - Full audit trail.
 
 **Out of scope**
@@ -47,7 +49,7 @@ Meeting  →  Requirements  →  Plan  →  Board ticket  →  Coding run  →  
 
 ```mermaid
 flowchart LR
-    U[User] --> UI[TaskTrace web UI]
+    U[User] --> UI[TaskTrace React web UI]
     UI --> APP[Django + DRF application]
 
     APP --> DB[(PostgreSQL)]
@@ -69,7 +71,8 @@ flowchart LR
 
 | Component | Role |
 |---|---|
-| **Web UI + API** | Meeting review, plan review, kanban board, run detail, audit timeline; REST API with approvals and idempotency keys |
+| **Web UI (React SPA)** | Meeting review, plan review, kanban board, run detail, audit timeline; talks only to the REST API |
+| **API (Django + DRF)** | REST API with approvals and idempotency keys; the OpenAPI schema generates the UI's typed client |
 | **Meeting Analyst** | Extracts decisions, requirements, constraints, risks, open questions with source references |
 | **Planner** | Produces work items, acceptance criteria, test plan, path policy; proposes plan changes |
 | **Context Builder** | Deterministic selection of relevant files, allowed and protected paths |
@@ -145,7 +148,7 @@ PostgreSQL holds structured data and JSONB artifacts. Large files (recordings, l
 | Backend | Python, Django, Django REST Framework, Pydantic |
 | Async | Celery, Redis |
 | Data | PostgreSQL |
-| UI | Django templates, HTMX, Alpine.js, Tailwind |
+| UI | React 18, TypeScript, Vite, TanStack Query, Tailwind CSS, dnd-kit; served by nginx |
 | AI | Free LLM tier (Groq / Gemini) or Ollama; faster-whisper; Claude Code CLI for coding |
 | Tracker and repo | GitHub Issues, Projects v2, Pull Requests, Actions |
 | Sandbox | Docker |

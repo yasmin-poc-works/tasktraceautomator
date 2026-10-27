@@ -21,7 +21,7 @@ The plan describes a production-grade platform. This document keeps the same cor
 | Hosted LLM only | **Pluggable provider: Groq / Gemini free tier / Ollama local** for Analyst and Planner | Free |
 | Claude Code as Coding Agent | **Claude Code CLI in the runner container** (the only possibly paid piece) | Required by the plan; see section 12 for the fallback |
 | Full observability stack | **Structured logs + Django admin + audit table** | Free, minimal |
-| React SPA | **Django templates + HTMX + Tailwind (CDN)** | One codebase, no Node build |
+| Server-rendered UI | **React SPA (TypeScript, Vite) on top of the DRF API** | Rich board (drag and drop), live run status, typed API client generated from the OpenAPI schema |
 | Multi-tenant orgs | **Single-tenant, project-level roles** | Out of MVP scope |
 
 The MVP principle from the plan is kept: **one coding agent with staged responsibilities**, human approval gates, typed versioned artifacts, and no auto-merge.
@@ -59,7 +59,8 @@ Everything runs on one machine with `docker compose up`.
 flowchart TB
     subgraph Host[Developer laptop / single free VM]
         subgraph Compose[Docker Compose]
-            WEB[web: Django + DRF + HTMX UI<br/>gunicorn]
+            FE[frontend: React SPA<br/>nginx serves build, proxies /api]
+            WEB[web: Django + DRF<br/>gunicorn]
             WORKER[worker: Celery workers]
             BEAT[beat: Celery beat<br/>reconciliation + polling]
             PG[(postgres 16)]
@@ -70,6 +71,7 @@ flowchart TB
         TUN[cloudflared / ngrok free tunnel<br/>for GitHub webhooks]
     end
 
+    FE -->|/api| WEB
     TUN --> WEB
     WEB --> PG
     WEB --> REDIS
@@ -82,7 +84,8 @@ flowchart TB
 
 | Service | Image / tool | Responsibility |
 |---|---|---|
-| web | Python 3.12, Django, DRF | REST API, board UI, approval endpoints, webhook receivers |
+| frontend | Node 20 build stage, nginx runtime | Serves the React build and proxies `/api` to `web`, so browser and API share one origin (no CORS) |
+| web | Python 3.12, Django, DRF | REST API, approval endpoints, webhook receivers (no HTML rendering except Django admin) |
 | worker | same image, Celery | All long-running work: ingest, analyze, plan, GitHub sync, run orchestration |
 | beat | same image | Board reconciliation, stuck-run detection, retry sweeps |
 | postgres | postgres:16 | State, artifacts (JSONB), audit log |
@@ -99,7 +102,7 @@ Webhooks need a public URL. If a tunnel is not available, the beat reconciliatio
 ```mermaid
 flowchart LR
     subgraph Presentation
-        UI[TaskTrace board<br/>Django templates + HTMX]
+        UI[TaskTrace board<br/>React SPA]
         API[DRF REST API]
     end
 
@@ -215,7 +218,7 @@ Triggered when a managed issue or sub-issue enters **TODO**:
 2. Create `CodingRun`, move the card to **In Progress**.
 3. Build or load the `ContextPackage`.
 4. Launch the runner container (section 6).
-5. Collect results, run verification, then push the branch and, if the project's `create_pull_request` setting is on, open the PR; otherwise post the branch link and diff as the handoff. Escalate on failure.
+5. Collect results, run verification, then push the branch and, if the good-to-have `create_pull_request` setting is on (default off), open the PR; otherwise post the branch link and diff as the handoff. Escalate on failure.
 
 ### 5.7 Coding Agent adapter (`agents/coding_agent`)
 - Calls **Claude Code CLI in headless mode** (`claude -p`) inside the runner with a generated prompt file built from the ticket, plan, context package, and path policy. The prompt keeps instructions separate from untrusted content.
@@ -357,12 +360,25 @@ GET  /api/issues/{number}/timeline/
 
 Conventions:
 - DRF with `drf-spectacular` for free OpenAPI docs at `/api/docs/`.
-- Token or session auth.
+- Session cookie auth with CSRF protection for the SPA (same origin through the frontend proxy); token auth only for non-browser clients.
+- The OpenAPI schema is the contract with the frontend: the TypeScript client and types are generated from it (`openapi-typescript`), and CI fails if the generated client is out of date.
 - Mutations accept an `Idempotency-Key` header; long operations return `202` with a run id and status URL.
 - Project role check (`viewer`, `member`, `approver`, `admin`) in a DRF permission class.
 
 ### 9.2 UI (TaskTrace board)
-Server-rendered Django templates with **HTMX** for partial updates and **Alpine.js / Tailwind via CDN**. No JS build chain.
+A **React 18 + TypeScript** single-page app built with **Vite**. The backend stays the only place that enforces workflow rules; the SPA displays state and sends commands.
+
+| Concern | Choice |
+|---|---|
+| Routing | React Router |
+| Server state and polling | TanStack Query (`refetchInterval` of 3 s for active runs) |
+| Drag and drop (board) | dnd-kit; a drop calls the transition endpoint and the card snaps back if the backend rejects the move |
+| Styling | Tailwind CSS (build step), headless components |
+| API client | Generated from the OpenAPI schema with `openapi-typescript` |
+| Diff view | react-diff-view or similar |
+| Forms | React Hook Form + Zod |
+
+Live updates start as polling. Server-sent events are a later upgrade and need no new infrastructure beyond an ASGI endpoint.
 
 | Screen | Content |
 |---|---|
@@ -370,7 +386,7 @@ Server-rendered Django templates with **HTMX** for partial updates and **Alpine.
 | Meeting review | Transcript with highlighted source spans, requirement items with edit, split, delete, approve |
 | Plan review | Work items, acceptance criteria, allow-list editor, plan diff for changes |
 | Board | Columns for Backlog, TODO, In Progress, In Review, Blocked, Done; actions to move, comment, assign |
-| Run detail | Live status (HTMX polling every 3 s), logs, diff, verification report, branch link, PR link (if any) |
+| Run detail | Live status (polling every 3 s), logs, diff, verification report, branch link, PR link (if any) |
 | Audit timeline | Filterable event list per work item |
 
 ---
@@ -409,8 +425,10 @@ Documented but not built in the first version: multi-tenant isolation, KMS, form
 | State machine tests | Table-driven transition and idempotency tests |
 | Workflow tests | Kill worker mid-run, duplicate webhook, delayed webhook, illegal card move |
 | Agent evaluation | Small fixed set of 5–10 meetings with expected requirements, and 5–10 repo tasks, scored per the plan's metrics |
+| Frontend unit and component | Vitest, React Testing Library, MSW to mock the API |
+| Frontend end-to-end | Playwright for the core path (upload, approve, move card to TODO, view report); optional |
 | Security | Injection fixtures in transcripts and repo files; assert the scope guard blocks them |
-| CI | **GitHub Actions free tier**: lint, tests, bandit, gitleaks |
+| CI | **GitHub Actions free tier**: lint, tests, bandit, gitleaks, frontend lint (ESLint), type check (`tsc`), Vitest, and OpenAPI client drift check |
 
 ---
 
@@ -422,7 +440,9 @@ Documented but not built in the first version: multi-tenant isolation, KMS, form
 | Database | PostgreSQL 16 | Free |
 | Queue / workers | Celery + Redis | Free |
 | Validation | Pydantic v2 for LLM outputs | Free |
-| UI | Django templates, HTMX, Alpine.js, Tailwind (CDN) | Free |
+| UI | React 18, TypeScript, Vite, React Router, TanStack Query, Tailwind CSS, dnd-kit | Free |
+| Frontend tooling | Node 20, npm or pnpm, ESLint, Vitest, React Testing Library, Playwright (optional), openapi-typescript | Free |
+| Web server for the SPA | nginx (in the `frontend` container) | Free |
 | Transcription | faster-whisper (local) | Free |
 | LLM for Analyst and Planner | Groq free tier, Google Gemini free tier, or Ollama (Llama 3.x / Qwen) locally, behind one adapter | Free |
 | Coding agent | **Claude Code CLI** | **Possibly paid** (see below) |
@@ -462,7 +482,15 @@ task-trace-automator/
 ├── providers/                  # llm/, transcription/, repository/, tracker/
 ├── schemas/                    # JSON/Pydantic artifact contracts
 ├── prompts/                    # versioned stage prompts
-├── templates/  static/         # HTMX UI
+├── frontend/                   # React + TypeScript SPA (Vite)
+│   ├── Dockerfile              # Node build stage, nginx runtime
+│   ├── nginx.conf              # serves build, proxies /api to web
+│   ├── src/
+│   │   ├── api/                # generated OpenAPI client and types
+│   │   ├── features/           # projects, meetings, plans, board, runs, audit
+│   │   ├── components/  routes/
+│   │   └── tests/
+│   └── package.json  vite.config.ts  tsconfig.json
 ├── tests/
 │   ├── unit/  integration/  workflow/  evaluation/
 └── docs/
@@ -479,11 +507,15 @@ task-trace-automator/
 | 1. Understand | Transcript upload, Analyst, requirement review UI, approvals | A draft package is corrected and approved |
 | 2. Plan | Planner, Context Builder, plan review with allow-list, plan versions | Reviewer can see why each file is in scope |
 | 3. Tracker | Issue creation, board UI, webhook and reconciliation, `PlanChange` sub-issues | Moving a card to TODO creates a queued run exactly once |
-| 4. Build and verify | Runner image, Claude Code adapter, scope enforcement, scanners, report, optional PR creation | A bad run (out-of-scope edit) is blocked; a good run pushes a branch and opens a PR when enabled |
+| 4. Build and verify | Runner image, Claude Code adapter, scope enforcement, scanners, report, branch handoff (PR creation is good-to-have) | A bad run (out-of-scope edit) is blocked; a good run pushes a branch and updates the ticket |
 | 5. Hardening | Retry cap, crash recovery, duplicate and delayed webhook tests | Restarting a worker mid-run does not duplicate issues or PRs |
 | 6. Evaluation | Run fixed evaluation set, collect metrics | Report compares the staged agent against a manual baseline |
 
-**Cut line if time is short:** drop audio transcription, the MinIO option, Prometheus and Grafana, and the free-fallback coding agent. Keep the transcript → requirements → plan → issue → Claude Code → verified PR path with human gates.
+**Good-to-have options** (tracked as G1–G9 in `implementation_plan/task.md`; none block an exit check):
+- **G1** GitHub pull request creation: `create_pull_request` project setting, **default off**. Without it the branch, diff, and report are the handoff and the user sets Done manually. With it, the PR is opened once and a merge webhook sets Done.
+- **G2** Audio transcription (faster-whisper). **G3** MinIO storage. **G4** Prometheus and Grafana. **G5** Free fallback coding agent. **G6** pgvector retrieval. **G7** Jira, Linear, or Plane adapters. **G8** Specialist agents, only after a measured benefit. **G9** Hosted deployment on a free VM.
+
+**Cut line if time is short:** drop the good-to-have options. Keep the transcript → requirements → plan → issue → Claude Code → verified branch path with human gates.
 
 ---
 
