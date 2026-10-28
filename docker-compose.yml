@@ -1,0 +1,135 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tasktrace_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tasktrace
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tasktrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tasktrace_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: tasktrace_web
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn --bind 0.0.0.0:8000 --workers 3 --reload config.wsgi:application"
+    volumes:
+      - ./api:/app
+      - artifacts_data:/artifacts
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production-min-50-characters-long}
+      - ALLOWED_HOSTS=*
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tasktrace
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ARTIFACTS_DIR=/artifacts
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: tasktrace_worker
+    restart: unless-stopped
+    command: celery -A config worker -l info
+    volumes:
+      - ./api:/app
+      - artifacts_data:/artifacts
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production-min-50-characters-long}
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tasktrace
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ARTIFACTS_DIR=/artifacts
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: tasktrace_beat
+    restart: unless-stopped
+    command: celery -A config beat -l info
+    volumes:
+      - ./api:/app
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production-min-50-characters-long}
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tasktrace
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: tasktrace_app
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "5173:80"
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
+  redis_data:
+  artifacts_data:

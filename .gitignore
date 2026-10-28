@@ -218,3 +218,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Frontend
+node_modules/
+dist/
+.vite/
+
+# TaskTraceAutomator Local Artifacts
+artifacts/
+
+# App & API specifics
+app/node_modules/
+app/dist/
+app/.vite/
+api/artifacts/
+api/staticfiles/
+api/db.sqlite3
+api/db.sqlite3-journal
