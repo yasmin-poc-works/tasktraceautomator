@@ -8,11 +8,11 @@
 
 ## 1. Goals and Scoping
 
-The plan describes a production-grade platform. This document keeps the same core idea and workflow: meeting → requirements → plan → Jira backlog tickets → Claude Code run → verification → QA. TaskTraceAutomator **orchestrates tools the customer already pays for** (their Jira and their Claude Code). It does not replace them, and it does not host its own tracker or coding model. It makes the following trade-offs to stay free and buildable by a small team.
+The plan describes a production-grade platform. This document keeps the same core idea and workflow: meeting → requirements → plan → GitHub backlog tickets → Claude Code run → verification → QA. TaskTraceAutomator **orchestrates tools the customer already pays for** (their GitHub and their Claude Code). It does not replace them, and it does not host its own tracker or coding model. It makes the following trade-offs to stay free and buildable by a small team.
 
 | Plan | This architecture | Reason |
 |---|---|---|
-| Jira as the ticket system | **Jira (the customer's own Jira Cloud board), through the Jira REST API v3.** Credentials are entered in the UI | The customer already uses Jira. We create backlog tickets and drive status through the API (see section 5.5) |
+| GitHub Issues + Projects as the ticket system | **The customer's own GitHub repo Issues and Projects (v2) board, through the GitHub MCP server.** The Planner agent creates issues and sub-issues through allow-listed MCP tools; the app performs every status change as a deterministic MCP client call (no LLM). The token is entered in the UI | The customer already uses GitHub and the MCP server gives agent-friendly tools without a custom API client. We create backlog tickets and drive status through MCP (see section 5.5) |
 | Temporal durable workflows | **Celery + Redis + a persisted state machine in PostgreSQL** | Free and simple; durability comes from DB state and idempotency keys |
 | S3 object storage | **Local filesystem / MinIO (free, optional)** | No cloud cost |
 | Managed PostgreSQL | **PostgreSQL in Docker** | Free |
@@ -26,7 +26,7 @@ The plan describes a production-grade platform. This document keeps the same cor
 
 The MVP principle from the plan is kept: **one coding agent with staged responsibilities**, human approval gates, typed versioned artifacts, and no auto-merge.
 
-**MVP scope:** backend coding only. Frontend tickets are created in Jira but are not auto-run until the next MVP (design upload or design approval, then page creation). Commit, push, and pull request are manual. GitHub is a later good-to-have.
+**MVP scope:** backend coding only. Frontend tickets are created in GitHub but are not auto-run until the next MVP (design upload or design approval, then page creation). Commit, push, and pull request are manual. Automatic pull request creation through the same GitHub MCP server is a later good-to-have.
 
 ---
 
@@ -36,19 +36,19 @@ The MVP principle from the plan is kept: **one coding agent with staged responsi
 flowchart LR
     User[Product owner / Engineer]
     TTA[TaskTraceAutomator]
-    JIRA[(User's Jira Cloud project + Kanban board)]
+    GH[(User's GitHub repo Issues + Projects board)]
     REPO[(Local backend repo folder)]
     LLM[LLM provider: Groq / Gemini free / Ollama]
     CC[User's Claude Code CLI]
 
     User -->|take notes, upload, approve, move to TODO| TTA
-    TTA <-->|Jira REST API v3, optional webhooks| JIRA
+    TTA <-->|GitHub MCP server, polling, optional webhooks| GH
     TTA -->|analysis + planning prompts| LLM
     TTA -->|dispatch approved ticket| CC
     CC -->|edits files + runs tests on a task branch| REPO
 ```
 
-TaskTraceAutomator owns artifacts, approvals, policies, runs, and evidence. Jira owns ticket identity and board status. The local repo folder owns the code. Jira is not the source of truth for the workflow itself: every status change that matters goes through our API and is checked against our state machine.
+TaskTraceAutomator owns artifacts, approvals, policies, runs, and evidence. GitHub owns issue identity and board status. The local repo folder owns the code. GitHub is not the source of truth for the workflow itself: every status change that matters goes through our API and is checked against our state machine.
 
 ---
 
@@ -69,7 +69,7 @@ flowchart TB
             FILES[(volume: artifacts/ <br/>or MinIO)]
             RUNNER[Claude Code run<br/>in worker, repo folder mounted]
         end
-        TUN[optional tunnel<br/>for Jira webhooks]
+        TUN[optional tunnel<br/>for GitHub webhooks]
     end
 
     FE -->|/api| WEB
@@ -87,14 +87,15 @@ flowchart TB
 |---|---|---|
 | frontend | Node 20 build stage, nginx runtime | Serves the React build and proxies `/api` to `web`, so browser and API share one origin (no CORS) |
 | web | Python 3.12, Django, DRF | REST API, approval endpoints, webhook receivers (no HTML rendering except Django admin) |
-| worker | same image, Celery | All long-running work: ingest, analyze, plan, Jira sync, run orchestration |
-| beat | same image | Jira polling and reconciliation, stuck-run detection, retry sweeps |
+| github-mcp | GitHub's official MCP server (Docker image or remote endpoint), `issues` and `projects` toolsets enabled | Tool surface for the Planner agent (create issue, create sub-issue, add to project) and for the app's own MCP client calls (status updates, comments, reads). Holds the only GitHub token |
+| worker | same image, Celery | All long-running work: ingest, analyze, plan, GitHub sync, run orchestration |
+| beat | same image | GitHub polling and reconciliation, stuck-run detection, retry sweeps |
 | postgres | postgres:16 | State, artifacts (JSONB), audit log |
 | redis | redis:7 | Celery broker and result backend, short locks |
 | runner | the worker image with git, Claude Code CLI, and the project's test tools, with the user's repo folder mounted at a configured path | Where the coding agent and verifier run. It must run on the same machine as the repo; a hosted instance cannot reach a local folder |
-| tunnel (optional) | cloudflared (free) or ngrok free | Exposes the webhook endpoint to Jira Cloud. Not needed when polling is used |
+| tunnel (optional) | cloudflared (free) or ngrok free | Exposes the webhook endpoint to GitHub. Not needed when polling is used |
 
-Jira Cloud cannot send webhooks to `localhost`. **Polling is the default**: the beat job reads the project's issues through the Jira API every 30–60 seconds. Webhooks are optional when a public URL exists.
+GitHub cannot send webhooks to `localhost`. **Polling is the default**: the beat job reads the project's issues and board items through the GitHub MCP server every 30–60 seconds. Webhooks are optional when a public URL exists.
 
 ---
 
@@ -136,7 +137,7 @@ flowchart LR
         LLMA[LLM adapter]
         TRA[Transcription adapter]
         SCMA[Repository adapter: local git folder]
-        TRK[Tracker adapter: Jira Cloud]
+        TRK[Tracker adapter: GitHub]
     end
 
     UI --> API
@@ -181,7 +182,10 @@ flowchart LR
 ### 5.3 Planner (`agents/planner`)
 - Input: approved requirement package and repository profile.
 - Output: `WorkItem` (Given/When/Then criteria, definition of done, test plan) and `ImplementationPlan` (allowed paths, protected paths, test commands, diff budget).
-- **Plan changes:** compares a proposed revision with the approved plan, writes a `PlanChange` with a diff and a reason, and requests approval. Only an approved `PlanChange` produces a Jira sub-task.
+- **Task type:** classifies each work item as `bug_fix`, `feature_addition`, `dependency_update`, `documentation`, or `config_change`. The type selects the coding skill (section 5.7). It is separate from the board category label (backend, frontend, bug, feature name).
+- **Triage score:** scores each work item 1–10 for estimated complexity using the Repo Map and the acceptance criteria. Items above the project's `max_complexity` setting are flagged `Needs split` and cannot start a run until a human splits or accepts them. The score is stored on the `WorkItem` and later feeds effort estimates (G11.b).
+- **Episodic memory:** before planning, reads the last few failed or escalated `CodingRun` rows for the same project and area (from `CodingRun` and `AuditEvent`) and shows them to the reviewer, so a failed approach is not repeated blindly.
+- **Plan changes:** compares a proposed revision with the approved plan, writes a `PlanChange` with a diff and a reason, and requests approval. Only an approved `PlanChange` produces a GitHub sub-issue.
 
 ### 5.4 Context Builder (`agents/context_builder`) — deterministic first
 No embeddings in the MVP. It uses:
@@ -191,49 +195,69 @@ No embeddings in the MVP. It uses:
 
 It outputs a `ContextPackage` with files to read, files allowed to change, protected files, and conventions. The engineer can edit the allow-list during plan review. `pgvector` is an optional later addition.
 
-### 5.5 Tracker control plane (`integrations/jira_tracker`)
+**Repo Map.** The Context Builder also builds a compact **Repo Map**: a directory tree plus one entry per file (path, language, exported symbols, one-line description). It is capped at a configurable token budget (`repo_map_token_budget`, default 4000) by summarizing and truncating the least relevant directories first. The map is cached on disk and rebuilt only for files that changed since the last build (`git diff --name-only <last_commit>`). Retrieval of the top-K relevant files (default K=10) is keyword and symbol matching over the Repo Map; embeddings stay a later option (G6).
 
-The tracker is the **customer's own Jira Cloud project and Kanban board**. The user enters the Jira site URL, account email, API token, and project key in the UI (project settings). The token is stored encrypted and never shown again. The adapter uses the Jira REST API v3.
+**Context rules.** The prompt carries file *paths* and reasons only, never raw file contents; the coding agent reads files on demand. Raw file text is never copied into the plan or the prompt file.
 
-| Capability needed | Jira equivalent | Notes |
+### 5.5 Tracker control plane (`integrations/github_tracker`)
+
+The tracker is the **customer's own GitHub repository Issues and a GitHub Projects (v2) board**. The user first selects the **board owner type**, **Personal account** or **Organization**, and the form changes to match. Personal: owner login, repository, Project number, and a **classic** token with the `project` and `repo` scopes (GitHub fine-grained tokens cannot reach user-owned Projects v2 boards). Organization: organization login, repository, Project number, and either a classic token with `project` and `repo` or a **fine-grained** token whose resource owner is the organization, with Issues read/write and the organization Projects permission. Both types are supported in the MVP. The token is stored encrypted and never shown again. All tracker traffic goes through the **GitHub MCP server** (`issues` and `projects` toolsets), which is the only component that holds the token.
+
+**Two callers, one MCP server.**
+
+| Caller | What it may do | Why |
 |---|---|---|
-| Backlog issue per work item | Issue (`POST /rest/api/3/issue`) | Description holds summary, criteria, plan version, work-item ID, in ADF |
-| Category: backend, frontend, bug, feature name | **Labels** and **Components** | Set on creation. Only `backend` tickets are auto-run in the MVP |
-| Status columns (Backlog, TODO, In Progress, QA, Blocked, Done) | The board's workflow statuses | Changed through `POST /rest/api/3/issue/{key}/transitions`. The project's workflow must contain these statuses; project settings map our states to the project's status names |
-| Sub-task for a plan change | Sub-task issue type | Created through the issue API with a parent key |
+| **Planner agent** (LLM, via MCP tools) | Only an allow-list: create issue, create sub-issue (parent link), add issue to the Project. No close, delete, edit-other-issue, or status-change tools | Ticket content (summary, criteria, definition of done, sub-issue text) is judgment-heavy, so the agent writes it. The tool allow-list is enforced outside the prompt |
+| **Tracker adapter** (deterministic MCP client, no LLM) | Status updates, comments, assignment, labels, reads, polling, reconciliation | Transitions must be deterministic, locked, idempotent, and audited |
+
+After every Planner tool call the adapter verifies the result, stores the references in `ExternalIssue`, and writes an `AuditEvent`. Before creating anything it searches for the work-item marker (below) so a retried or timed-out call cannot create a duplicate.
+
+| Capability needed | GitHub equivalent | Notes |
+|---|---|---|
+| Backlog issue per work item | Issue (MCP `create issue`) | Markdown body holds summary, criteria, plan version, and a hidden marker `<!-- tta:work_item=<id>;plan=<version> -->` used for idempotent lookup |
+| Place on the board | Project item (MCP projects tools: add item) | Created in Backlog |
+| Category: backend, frontend, bug, feature name | **Labels** | Set on creation. Only `backend` tickets are auto-run in the MVP |
+| Status columns (Backlog, TODO, In Progress, QA, Blocked, Done) | The Project's single-select **Status** field | An issue itself is only open or closed; the board column is the Status field of the project item. Project settings map our states to the Status option names |
+| Sub-issue for a plan change | GitHub **sub-issue** linked to the parent issue | Created by the Planner agent after the plan change is approved |
 | Comments | Issue comments | Evidence, branch name, and report summary are posted here |
-| Assign, priority | `assignee`, `priority` fields | |
-| Block / unblock with reason | Status `Blocked` (or a `blocked` flag) plus a comment | Reason is also stored in the audit log |
-| Event on status change | Optional Jira webhook (`jira:issue_updated`) or polling with JQL | See below |
+| Assign, priority | `assignees`, and a Project `Priority` field | |
+| Block / unblock with reason | Status `Blocked` plus a comment | Reason is also stored in the audit log |
+| Event on status change | Polling of project items (default) or optional repository webhook (`issues`, `projects_v2_item`) | See below |
 
-**Moving a ticket to TODO.** The UI has a "Move to TODO" action. It calls our endpoint, which checks the state machine, then performs the Jira transition and writes an `AuditEvent` with the user, time, and Jira issue key. Because the transition goes through our API, the move is **traced**: we know who moved what and when. The same call enqueues the run.
+**Reference format.** An issue is identified as `owner/repo#123` plus its node ID and its Project item ID, all stored in `ExternalIssue`. The Project item ID is what status updates use.
 
-**Moves made directly in Jira.** These are visible only through a webhook or a poll. The supported way is the TaskTrace UI. Polling reads issues with JQL (`project = KEY AND updated >= -2m`) as a safety net. A status change found by polling that was not made through our API is recorded as an external change. A move to TODO found this way starts a run only if the project setting `accept_jira_side_moves` is on (default off). An illegal move found this way (for example straight to Done) is flagged on the ticket with a comment and recorded in the audit log.
+**Moving a ticket to TODO.** The UI has a "Move to TODO" action. It calls our endpoint, which checks the state machine, then the adapter updates the item's Status field through MCP and writes an `AuditEvent` with the user, time, and issue reference. Because the transition goes through our API, the move is **traced**: we know who moved what and when. The same call enqueues the run.
+
+**Moves made directly in GitHub.** These are visible only through a webhook or a poll. The supported way is the TaskTrace UI. Polling lists the project's items with their Status and `updatedAt` as a safety net. A status change found by polling that was not made through our API is recorded as an external change. A move to TODO found this way starts a run only if the project setting `accept_github_side_moves` is on (default off). An illegal move found this way (for example straight to Done) is flagged on the ticket with a comment and recorded in the audit log.
 
 **Who moves what.**
 - The **app** moves Backlog → TODO (on user action), TODO → In Progress (run starts), In Progress → QA (tests pass), and any → Blocked (run fails or needs a decision).
-- Only a **human** moves QA → Done, after manual testing and a Definition of Done check. The app never sets Done.
-- The app, not Claude Code, performs every Jira transition, so transitions are deterministic and audited.
+- Only a **human** moves QA → Done, after manual testing and a Definition of Done check. The app never sets Done; when a human sets Done the issue is closed.
+- The app's state machine, not Claude Code and not an LLM, performs every GitHub status change, so transitions are deterministic and audited.
 
 Behavior:
-- Creates backlog issues after plan approval. Idempotent: key = `work_item_id + plan_version`, stored as an issue property and in `ExternalIssue`; a retry finds the existing issue instead of creating a duplicate.
-- UI commands (move, comment, assign, block/unblock) are authenticated TaskTraceAutomator endpoints. Each one calls Jira and writes an audit event.
-- If webhooks are enabled, they are persisted to `WebhookEvent`, deduplicated, and verified with a shared secret in the webhook URL.
-- Beat polling reconciles Jira state with internal state so missed events cannot strand tickets.
-- Jira rate limits are handled with retry and backoff on `429`.
+- Creates backlog issues after plan approval. Idempotent: key = `work_item_id + plan_version`, embedded as the body marker and stored in `ExternalIssue`; a retry finds the existing issue instead of creating a duplicate.
+- UI commands (move, comment, assign, block/unblock) are authenticated TaskTraceAutomator endpoints. Each one calls the MCP server and writes an audit event.
+- If webhooks are enabled, they are persisted to `WebhookEvent`, deduplicated, and verified with the webhook secret (`X-Hub-Signature-256`).
+- Beat polling reconciles GitHub state with internal state so missed events cannot strand tickets.
+- GitHub rate limits (primary and secondary) are handled with retry and backoff on `403`/`429`, honouring `Retry-After`.
+- Text in issue bodies and comments is untrusted data and is never fed to the Coding Agent; only the approved plan version is.
 
 ### 5.6 Run orchestrator (`runs`)
-Triggered when a managed issue is moved to **TODO** through our UI (or found in TODO by polling, if `accept_jira_side_moves` is on):
+Triggered when a managed issue is moved to **TODO** through our UI (or found in TODO by polling, if `accept_github_side_moves` is on):
 1. Verify the issue is in the configured project, is a `backend` ticket (MVP), links to an approved plan version, and has no active or completed run (unique constraint on `work_item + plan_version` for active runs).
-2. Create `CodingRun`, move the Jira ticket to **In Progress**.
+2. Create `CodingRun`, move the GitHub issue to **In Progress**.
 3. Build or load the `ContextPackage` from the configured local repo folder.
 4. Create a new git branch for the task and start the Claude Code run (section 6).
-5. Collect results and run verification. On `PASS`, post the evidence (branch name, diff summary, report) as a Jira comment and move the ticket to **QA**. On `FAIL` after retries, move it to **Blocked** with the reason. Commit, push, and pull request are manual.
+5. Collect results and run verification. On `PASS`, post the evidence (branch name, diff summary, report) as a GitHub comment and move the ticket to **QA**. On `FAIL` after retries, move it to **Blocked** with the reason. Commit, push, and pull request are manual.
 6. A human tests manually and moves the ticket to **Done** when the Definition of Done is met.
 
 ### 5.7 Coding Agent adapter (`agents/coding_agent`)
 - Calls **Claude Code CLI in headless mode** (`claude -p`) inside the runner with a generated prompt file built from the ticket, plan, context package, and path policy. The prompt keeps instructions separate from untrusted content.
 - Limits: `--max-turns`, wall-clock timeout, and a token/cost cap via the run budget.
+- **Skills.** The prompt builder loads one versioned **skill** by the work item's task type from `prompts/skills/`. A skill is a structured object, not a free string: `name`, `instructions`, `workflow_steps`, `example_prompts`, and `forbidden_actions`. MVP skills: `bug_fix` (reproduce with a failing test, localize, fix, verify), `feature_addition` (read similar existing code first, design, implement, test, document), `dependency_update` (check the changelog, update the lockfile, resolve conflicts, run the full suite), `documentation` (read existing style, draft, check accuracy, update the index), and `config_change`. A run records the skill name and version.
+- **Inner loop.** Every run follows the same order: read the context package files on demand, write a short change plan, make small surgical edits (no whole-file rewrites unless needed), run the configured tests, fix and retry on failure (cap 2, then `NEEDS_HUMAN_REVIEW`). Before finishing, the agent writes `proposed_diff.txt` (a unified diff) and `change_plan.md` into the run artifacts for the reviewer.
+- **Lessons.** The prompt includes up to 3 past lessons most similar to the work item (section 5.11), labelled as untrusted hints, not instructions.
 - Issue text is never fed to the agent directly. Only the internally approved plan version is used, as the plan requires.
 
 ### 5.8 Verifier (`verification` + runner)
@@ -252,11 +276,36 @@ Deterministic checks first, interpretation second. Free tools only:
 
 Result: `PASS`, `FAIL`, or `NEEDS_HUMAN_REVIEW`. On `FAIL` with retries left, structured failure feedback goes back to the same coding stage. Cap at 2 retries, then escalate.
 
+**Environment failures are not code failures.** The Verifier classifies a failed check as `CODE_FAILURE` (tests ran and failed) or `ENVIRONMENT_FAILURE` (the test command could not start: missing dependency, bad config, collection error before any test ran). An environment failure does not consume a retry and does not go back to the coding agent; the run goes to `NEEDS_HUMAN_REVIEW` with a report that says the environment must be fixed.
+
+**Suggested commit message.** The verification report includes a structured commit message the user can copy. Commit and push stay manual:
+
+```text
+fix(#<issue>): <one-line summary>
+
+- <what changed>
+- <why>
+- Closes #<issue>
+```
+
+The type prefix follows the task type (`fix`, `feat`, `chore`, `docs`).
+
 ### 5.9 Human Gate (`requirements`, `work_items`)
 An `Approval` row stores user, artifact type, artifact id and version, decision, comment, and time. Approving a new version supersedes older approvals. Approval endpoints require the current version number and return 409 if it is stale.
 
 ### 5.10 Audit (`audit`)
-Append-only `AuditEvent` table. The application DB role has `INSERT`/`SELECT` only on it. It records state transitions, approvals, board commands, webhooks received, prompts (hashed plus stored reference), tool results, diffs, and checks.
+Append-only `AuditEvent` table. The application DB role has `INSERT`/`SELECT` only on it. It records state transitions, approvals, board commands, webhooks received, prompts (hashed plus stored reference), tool results, blocked tool attempts, diffs, and checks.
+
+### 5.11 Memory (`projects`, `runs`)
+Three tiers, kept simple and in PostgreSQL:
+
+| Tier | What it holds | Where | Used by |
+|---|---|---|---|
+| Working | The current task: work item, plan version, Repo Map slice, relevant files, diff, test results, retry count | `ContextPackage` and `CodingRun` state, passed explicitly to each stage; never relied on from chat history | Run orchestrator, prompt builder |
+| Episodic | Recent outcomes for the project: which work items failed or escalated, and why | `CodingRun`, `VerificationReport`, `AuditEvent` (read-only query) | Planner (section 5.3) |
+| Semantic | `Lesson` rows: what the issue was, which files changed, which approach worked | `Lesson` table, written when a human moves QA → Done | Prompt builder (top 3 by keyword match on task type, paths, and title) |
+
+A lesson is written only after a human marks the ticket Done, because a human-verified outcome is a better signal than a generated diff. Lessons are untrusted text: they are shown to the agent as hints and never as instructions. Vector search for lessons is part of G6.
 
 ---
 
@@ -269,10 +318,10 @@ sequenceDiagram
     participant W as Celery worker
     participant G as Local git repo
     participant C as Claude Code (claude -p)
-    participant J as Jira
+    participant J as GitHub (via MCP)
 
     W->>J: move ticket to In Progress
-    W->>G: check clean tree, create branch tta/PROJ-123
+    W->>G: check clean tree, create branch tta/issue-123
     W->>C: prompt file + context package, user's API key
     C->>G: edit files, add tests, run tests (budget: turns, time)
     W->>G: scope check: git diff vs allow-list and protected paths
@@ -285,12 +334,14 @@ sequenceDiagram
 ```
 
 Controls:
-- Work only starts on a clean working tree. Every task gets its own branch (`tta/<ticket-key>`), so a bad run is discarded by deleting the branch. Nothing is committed to `main`, and nothing is pushed.
+- Work only starts on a clean working tree. Every task gets its own branch (`tta/issue-<number>`), so a bad run is discarded by deleting the branch. Nothing is committed to `main`, and nothing is pushed.
 - Claude Code runs with a restricted tool set and permission mode so it can only edit files and run the configured test and lint commands inside the repo folder.
+- **Pre-execution guardrails** (first layer, before anything runs). The runner writes a per-run Claude Code settings file with deny rules and a `PreToolUse` hook that block, before execution: `rm -rf`, `curl`, `wget`, package installs from the network (`pip install`, `npm install`), `git push`, any command or path outside the repo folder, and edits to `.env`, `*.pem`, `*.key`, `*.secret`, and `*credentials*`. The exact rule and hook syntax is confirmed against the current Claude Code documentation during T4.1.d. A blocked attempt is written to the `AuditEvent` log with the command or path the agent wanted, and the run stops in `NEEDS_HUMAN_REVIEW` so a human can see what it tried. A human may approve a one-time exception only for the paths and commands in the approved plan; secrets and `git push` are never approvable from the run screen.
+- Isolation option: a git worktree per task (a separate checkout outside the user's working folder) is a later good-to-have (G13). The MVP keeps the clean-tree check and the task branch.
 - Runs have a turn limit, a wall-clock timeout, and a cost cap.
-- Scope is enforced **outside the model**: after the run the worker diffs against the allow-list and protected paths and rejects violations regardless of what the agent claims. Protected paths include `.env`, secrets, CI config, and lock files unless allowed.
-- The user's API keys and the Jira token are stored encrypted and are passed to the process as environment variables only for the run.
-- Commit, push, and pull request are done by the user. GitHub integration is a later good-to-have.
+- Scope is enforced **outside the model** as a second layer: after the run the worker diffs against the allow-list and protected paths and rejects violations regardless of what the agent claims. Protected paths include `.env`, secrets, CI config, and lock files unless allowed.
+- The user's Anthropic API key is stored encrypted and passed to the process as an environment variable only for the run. The GitHub token is held only by the GitHub MCP server and is never given to Claude Code.
+- Commit, push, and pull request are done by the user. GitHub pull request creation through the MCP server is a later good-to-have.
 
 ---
 
@@ -309,11 +360,11 @@ stateDiagram-v2
     REQUIREMENTS_DRAFTED --> REQUIREMENTS_APPROVED: human
     REQUIREMENTS_APPROVED --> PLAN_DRAFTED
     PLAN_DRAFTED --> PLAN_APPROVED: human
-    PLAN_APPROVED --> BACKLOGGED: Jira ticket created
+    PLAN_APPROVED --> BACKLOGGED: GitHub issue created
     BACKLOGGED --> RUN_QUEUED: user moves ticket to TODO in our UI
     RUN_QUEUED --> EXECUTING
     EXECUTING --> VERIFYING
-    VERIFYING --> QA: pass, app moves Jira ticket to QA
+    VERIFYING --> QA: pass, app moves GitHub issue to QA
     VERIFYING --> REPAIRING: fail, retries left
     REPAIRING --> EXECUTING
     VERIFYING --> NEEDS_HUMAN_REVIEW: cap or policy issue
@@ -321,7 +372,7 @@ stateDiagram-v2
     QA --> REPAIRING: human rejects, ticket back to TODO
 ```
 
-**Durability without Temporal:** use `acks_late=True`, `task_reject_on_worker_lost=True`, per-activity idempotency keys stored in an `ActivityLog` table (`key`, `status`, `result_ref`), and a beat job that re-enqueues runs stuck in a non-terminal state past a timeout. External side effects (create Jira issue, Jira transition, comment) check `ActivityLog` and the stored external reference before acting.
+**Durability without Temporal:** use `acks_late=True`, `task_reject_on_worker_lost=True`, per-activity idempotency keys stored in an `ActivityLog` table (`key`, `status`, `result_ref`), and a beat job that re-enqueues runs stuck in a non-terminal state past a timeout. External side effects (create GitHub issue, GitHub transition, comment) check `ActivityLog` and the stored external reference before acting.
 
 ---
 
@@ -341,16 +392,17 @@ The ER model in section 10 of the plan applies. Additions:
 
 | Table | Purpose |
 |---|---|
-| `ExternalIssue` | `work_item_id`, `plan_version`, `jira_key`, `jira_id`, `parent_jira_key`, `last_status`, `synced_at` |
-| `PlanChange` | `implementation_plan_id`, `from_version`, `to_version`, `diff`, `reason`, `status`, `sub_task_key` |
+| `ExternalIssue` | `work_item_id`, `plan_version`, `issue_ref` (`owner/repo#123`), `issue_number`, `issue_node_id`, `project_item_id`, `parent_issue_number`, `last_status`, `synced_at` |
+| `PlanChange` | `implementation_plan_id`, `from_version`, `to_version`, `diff`, `reason`, `status`, `sub_issue_ref` |
 | `ActivityLog` | Idempotency keys for side-effecting tasks |
+| `Lesson` | `project_id`, `work_item_id`, `task_type`, `title`, `files_changed`, `approach`, `outcome`, `created_at` (written when a human moves QA → Done) |
 | `WebhookEvent` | Raw inbound event, delivery ID, signature result, processed flag |
 | `ModelCall` | Provider, model, prompt version, tokens, latency, cost (zero for free tiers) |
 
 ### 8.3 Rules
 - UUID public IDs; approved artifacts are immutable, and edits create a new version.
 - Prompts, JSON schemas, and tool policies live in the repo with a version string; each artifact records the versions used.
-- Secrets exist only in environment variables or Docker secrets (`.env` is git-ignored), never in artifacts or prompts. User-supplied credentials (Jira token, Anthropic API key) entered in the UI are stored encrypted at rest and never returned by the API.
+- Secrets exist only in environment variables or Docker secrets (`.env` is git-ignored), never in artifacts or prompts. User-supplied credentials (GitHub token, Anthropic API key) entered in the UI are stored encrypted at rest and never returned by the API.
 
 ---
 
@@ -360,16 +412,16 @@ The ER model in section 10 of the plan applies. Additions:
 Resources follow section 11.1 of the plan with tracker-neutral names:
 
 ```text
-POST /api/implementation-plans/{id}/create-issues/      # creates Jira backlog tickets
-PUT  /api/projects/{id}/integrations/jira/              # site URL, email, API token, project key, status mapping
+POST /api/implementation-plans/{id}/create-issues/      # Planner agent creates GitHub backlog issues (MCP)
+PUT  /api/projects/{id}/integrations/github/              # owner, repo, Project number, token, status mapping
 PUT  /api/projects/{id}/integrations/claude/            # Anthropic API key, model, repo folder path
 POST /api/projects/{id}/integrations/{kind}/test/       # test connection
 POST /api/plan-changes/{id}/approve/
-POST /api/integrations/jira/webhook/                    # optional
-POST /api/issues/{key}/transition/                      # e.g. Backlog -> TODO; Done is human-only
-POST /api/issues/{key}/comments/
-POST /api/issues/{key}/sub-tasks/
-GET  /api/issues/{key}/timeline/
+POST /api/integrations/github/webhook/                    # optional
+POST /api/issues/{issue_ref}/transition/                      # e.g. Backlog -> TODO; Done is human-only
+POST /api/issues/{issue_ref}/comments/
+POST /api/issues/{issue_ref}/sub-issues/
+GET  /api/issues/{issue_ref}/timeline/
 ```
 
 Conventions:
@@ -405,7 +457,7 @@ Live updates start as polling. Server-sent events are a later upgrade and need n
 |---|---|---|---|---|
 | `/` | Dashboard: projects, runs needing attention, pending approvals, recent activity | read | ✔ | ✔ |
 | `/projects` | Projects list | read | ✔ | ✔ + create |
-| `/projects/:id/settings` | Jira connection, Claude connection (API key, model), local repo folder, path policy, test commands, members | — | — | ✔ |
+| `/projects/:id/settings` | GitHub connection, Claude connection (API key, model), local repo folder, path policy, test commands, members | — | — | ✔ |
 | `/projects/:id/meetings` | Meetings list and status | read | ✔ | ✔ |
 | `/projects/:id/meetings/new` | Upload or paste transcript | — | ✔ | ✔ |
 | `/meetings/:id` | Requirement review: transcript with highlighted source spans, edit, split, delete, open questions, approve | read | ✔ | ✔ |
@@ -445,7 +497,7 @@ A user with no access to a project sees nothing of it.
 | Move cards (including to TODO, which starts a run), comment, assign, block/unblock | — | ✔ | ✔ |
 | Cancel or retry a run | — | ✔ | ✔ |
 | Move a ticket from QA to Done after manual testing (human only) | — | ✔ | ✔ |
-| Create a project; edit project settings (Jira and Claude connections, repo folder, path policy, test commands) | — | — | ✔ |
+| Create a project; edit project settings (GitHub and Claude connections, repo folder, path policy, test commands) | — | — | ✔ |
 | Manage users, roles, and project membership | — | — | ✔ |
 | View project-wide and global audit log | — | — | ✔ |
 
@@ -464,7 +516,7 @@ Whether the author of an artifact may also be its only approver is a project pol
 | Agent edits protected files | Post-run diff check against path policy; failure blocks the move to QA and the ticket goes to Blocked |
 | Unauthorized actions | Bearer-token auth, role and access-level permission class (section 9.3), approval-version checks, HMAC-verified webhooks |
 | Token theft or brute force | Short-lived access tokens held in memory only, refresh-token blacklist on logout, login rate limit and lockout, auth events audited |
-| Illegal board moves made directly in Jira | Moves through our UI are validated by the state machine; moves found by polling are flagged with a comment and an audit event. The app never sets Done |
+| Illegal board moves made directly in GitHub | Moves through our UI are validated by the state machine; moves found by polling are flagged with a comment and an audit event. The app never sets Done |
 | Duplicate or replayed commands | Idempotency keys, unique constraints, `WebhookEvent` dedupe by delivery ID |
 | Runaway cost or time | Per-run budget (turns, time, tokens), retry cap of 2 |
 | Auto-merge | Not possible: bot token has no merge rights, `main` is branch-protected |
@@ -486,7 +538,7 @@ Documented but not built in the first version: multi-tenant isolation, KMS, form
 | Level | Tooling |
 |---|---|
 | Unit | pytest, pytest-django |
-| Adapter contract tests | Recorded HTTP with `responses` or `vcr.py`, mocks for Jira and LLM |
+| Adapter contract tests | Recorded MCP tool-call fixtures or a fake MCP server, mocks for LLM |
 | State machine tests | Table-driven transition and idempotency tests |
 | Workflow tests | Kill worker mid-run, duplicate webhook, delayed webhook, illegal card move |
 | Agent evaluation | Small fixed set of 5–10 meetings with expected requirements, and 5–10 repo tasks, scored per the plan's metrics |
@@ -512,7 +564,7 @@ Documented but not built in the first version: multi-tenant isolation, KMS, form
 | Transcription | faster-whisper (local) | Free |
 | LLM for Analyst and Planner | Groq free tier, Google Gemini free tier, or Ollama (Llama 3.x / Qwen) locally, behind one adapter | Free |
 | Coding agent | **The user's own Claude Code CLI** | The customer's existing cost (see below) |
-| Ticketing / kanban | The customer's Jira Cloud project, Jira REST API v3 | Customer's existing Jira |
+| Ticketing / kanban | The customer's GitHub Issues and Projects (v2) board, GitHub MCP server | Customer's existing GitHub; one tool surface for the Planner agent and the app |
 | Source control | Local git folder, manual commit, push, and PR | Free |
 | Runtime | Docker Compose with the repo folder mounted into the worker | Free |
 | Webhook tunnel (optional) | cloudflared or ngrok free | Free |
@@ -576,16 +628,16 @@ tasktraceautomator/
 | 0. Foundation | Compose stack, Django apps, models, audit, state machine, auth | Transitions are tested and idempotent |
 | 1. Understand | Transcript upload, Analyst, requirement review UI, approvals | A draft package is corrected and approved |
 | 2. Plan | Planner, Context Builder, plan review with allow-list, plan versions | Reviewer can see why each file is in scope |
-| 3. Tracker | Jira and Claude connection settings, Jira ticket creation, board UI, Move to TODO, polling and reconciliation, `PlanChange` sub-tasks | Moving a ticket to TODO in the UI creates a queued run exactly once |
+| 3. Tracker | GitHub and Claude connection settings, GitHub issue creation, board UI, Move to TODO, polling and reconciliation, `PlanChange` sub-issues | Moving a ticket to TODO in the UI creates a queued run exactly once |
 | 4. Build and verify | Local runner, Claude Code adapter, scope enforcement, scanners, report, move to QA | A bad run (out-of-scope edit) is blocked; a good run leaves a branch and moves the ticket to QA |
-| 5. Hardening | Retry cap, crash recovery, duplicate and delayed webhook tests | Restarting a worker mid-run does not duplicate Jira tickets or runs |
+| 5. Hardening | Retry cap, crash recovery, duplicate and delayed webhook tests | Restarting a worker mid-run does not duplicate GitHub issues or runs |
 | 6. Evaluation | Run fixed evaluation set, collect metrics | Report compares the staged agent against a manual baseline |
 
-**Good-to-have options** (tracked as G1–G11 in `../implementation_plan/task.md`; none block an exit check):
+**Good-to-have options** (tracked as G1–G13 in `../implementation_plan/task.md`; none block an exit check):
 - **G1** GitHub pull request creation: `create_pull_request` project setting, **default off**. Later good-to-have. In the MVP commit, push, and PR are manual and the branch, diff, and report are the handoff.
-- **G2** Audio transcription (faster-whisper). **G3** MinIO storage. **G4** Prometheus and Grafana. **G5** Free fallback coding agent. **G6** pgvector retrieval. **G7** Linear or Trello adapters. **G8** Specialist agents, only after a measured benefit. **G9** Hosted deployment on a free VM. **G10** Server-sent events instead of polling. **G11** Scrum assistant: advisory process support (priority ordering, effort estimates, blocker nudges, weekly summary) that only suggests and never moves tickets or approves.
+- **G2** Audio transcription (faster-whisper). **G3** MinIO storage. **G4** Prometheus and Grafana. **G5** Free fallback coding agent. **G6** pgvector retrieval. **G7** Linear or Trello adapters (the tracker adapter boundary allows them). **G8** Specialist agents, only after a measured benefit. **G9** Hosted deployment on a free VM. **G10** Server-sent events instead of polling. **G13** Git worktree per task for isolation and parallel runs. **G11** Scrum assistant: advisory process support (priority ordering, effort estimates, blocker nudges, weekly summary) that only suggests and never moves tickets or approves.
 
-**Cut line if time is short:** drop the good-to-have options. Keep the transcript → requirements → plan → Jira ticket → Claude Code → QA path with human gates.
+**Cut line if time is short:** drop the good-to-have options. Keep the transcript → requirements → plan → GitHub issue → Claude Code → QA path with human gates.
 
 ---
 
@@ -595,9 +647,10 @@ tasktraceautomator/
 |---|---|
 | Celery lacks Temporal-style replay | Persisted state machine, `ActivityLog` idempotency, reconciliation beat job, crash tests |
 | Free LLM tiers rate-limit or produce weaker JSON | Pydantic validation with one repair retry, chunking, provider fallback chain, small transcripts for demos |
-| Jira webhooks unreachable on a laptop | Polling is the default; webhooks are optional |
-| Users move tickets directly in Jira | UI is the supported path; polling flags illegal moves; the app never sets Done |
+| GitHub webhooks unreachable on a laptop | Polling is the default; webhooks are optional |
+| Users move tickets directly in GitHub | UI is the supported path; polling flags illegal moves; the app never sets Done |
 | Claude Code edits the user's real folder | Clean-tree check, per-task branch, path allow-list, post-run diff check, no commit or push |
-| Jira workflow lacks our statuses | Status mapping in project settings, with a connection test that lists missing statuses |
+| Project board lacks our Status options | Status mapping in project settings, with a connection test that lists missing Status field options |
+| The Planner agent (LLM with write tools) creates duplicate or wrong issues, or is prompt-injected | Tool allow-list enforced outside the prompt (create issue, create sub-issue, add to project only), work-item marker lookup before create, adapter verifies and records every result, token scoped to one repo and Project, status changes only by the app |
 | Claude Code cost | Budget caps, small tasks, adapter fallback |
 | Scope creep toward multi-agent | Single-agent baseline first; specialists only after measured benefit, per the plan |

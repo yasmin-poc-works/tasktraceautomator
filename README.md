@@ -1,6 +1,6 @@
 # TaskTraceAutomator
 
-AI-assisted, traceable, and governed workflow from meeting decisions to Jira/GitHub backlog tickets and reviewable pull requests.
+AI-assisted, traceable, and governed workflow from meeting decisions to GitHub backlog issues (GitHub Issues and Projects via the GitHub MCP server) and reviewable code changes.
 
 ---
 
@@ -25,7 +25,7 @@ tasktraceautomator/
 │   │   ├── work_items/         # Work items, plan versions, plan changes
 │   │   ├── runs/               # Coding run orchestration
 │   │   ├── verification/       # Automated test, scan, and traceability verification
-│   │   ├── integrations/       # GitHub tracker & webhooks adapter
+│   │   ├── integrations/       # GitHub MCP tracker adapter & optional webhooks
 │   │   └── audit/              # Append-only audit events
 │   ├── agents/                 # Analyst, Planner, Context Builder, Coding Agent
 │   ├── providers/              # LLM, Transcription, SCM, Tracker adapters

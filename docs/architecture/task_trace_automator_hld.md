@@ -7,11 +7,11 @@
 
 ## 1. Purpose
 
-TaskTraceAutomator turns a meeting into reviewed, verified code changes with every step traceable and every consequential step approved by a human. It **orchestrates tools the customer already pays for**: their Jira board and their Claude Code. It does not replace either.
+TaskTraceAutomator turns a meeting into reviewed, verified code changes with every step traceable and every consequential step approved by a human. It **orchestrates tools the customer already pays for**: their GitHub Issues and Projects board and their Claude Code. It does not replace either.
 
 ```text
-Meeting  →  Action items  →  Plan/tasks  →  Jira backlog  →  TODO  →  Claude Code run  →  QA  →  Done
-            (approve)        (approve)      (our API)      (our UI)   (tests included)  (app)   (human)
+Meeting  →  Action items  →  Plan/tasks  →  GitHub backlog  →  TODO  →  Claude Code run  →  QA  →  Done
+            (approve)        (approve)      (MCP)         (our UI)   (tests included)  (app)   (human)
 ```
 
 ## 2. Scope
@@ -21,8 +21,8 @@ Meeting  →  Action items  →  Plan/tasks  →  Jira backlog  →  TODO  →  
 - Redaction and content moderation (no 18+, harassment, or illegal content) before any LLM call.
 - Action-item extraction (pure coding work only) with human approval, then planning into tasks with human approval.
 - Tasks categorized as backend, frontend, bug, or feature name.
-- Creating the tasks in the **user's own Jira board backlog** through the Jira API. The Jira connection is set in the UI.
-- A "Move to TODO" action in our UI that calls the Jira transition API. The move goes through our API, so it is traced.
+- Creating the tasks in the **user's own GitHub Project board backlog** through the **GitHub MCP server**: the Planner agent creates the issues and sub-issues with allow-listed tools. The GitHub connection is set in the UI.
+- A "Move to TODO" action in our UI that updates the Project item's Status field through the GitHub MCP server. The move goes through our API, so it is traced.
 - Automatic run of the **user's own Claude Code** (API key set in the UI) against the configured **local backend folder**, including tests. **Backend coding only** in this MVP.
 - On success the app moves the ticket to **QA** and comments the evidence. A human tests manually and moves it to **Done** when the Definition of Done is met.
 - Commit, push, and pull request are **manual**.
@@ -46,8 +46,8 @@ Meeting  →  Action items  →  Plan/tasks  →  Jira backlog  →  TODO  →  
 | 1 | One coding agent with staged responsibilities | Establish a baseline before adding complexity |
 | 2 | Typed, versioned artifacts instead of chat history | Auditable, resumable, reviewable |
 | 3 | Human approval at action items, plan, plan changes, and Done | Intent and code stay human-accountable |
-| 4 | The customer's Jira is the ticket system; the app drives it through the Jira API | Customers already pay for Jira; we orchestrate instead of replacing it |
-| 5 | The app, not the model, performs every Jira transition; the app never sets Done | Deterministic, audited, human-owned completion |
+| 4 | The customer's GitHub is the ticket system; the app drives it through the GitHub MCP | Customers already pay for GitHub; we orchestrate instead of replacing it |
+| 5 | The app, not the model, performs every GitHub transition; the app never sets Done | Deterministic, audited, human-owned completion |
 | 6 | The user's own Claude Code runs the work, using the user's API key | Customers already pay for Claude Code |
 | 7 | Persisted state machine + Celery/Redis | Durable and free; replaces a workflow engine |
 | 8 | Scope and security enforced outside the model | The model is not trusted to police itself |
@@ -67,7 +67,7 @@ flowchart LR
 
     W --> AN[Meeting Analyst + Planner<br/>LLM]
     W --> TR[faster-whisper<br/>transcription]
-    W <--> JIRA[User's Jira Cloud<br/>REST API, polling]
+    W <--> GH[User's GitHub Issues + Projects<br/>via GitHub MCP server, polling]
     W --> RUN[Claude Code run<br/>+ verifier]
 
     RUN --> REPO[(Local backend repo folder<br/>task branch)]
@@ -77,16 +77,16 @@ flowchart LR
 
 | Component | Role |
 |---|---|
-| **Web UI (React SPA)** | Take notes, meeting review, plan review, board with Move to TODO, run detail, settings for the Jira and Claude connections, audit timeline; talks only to the REST API |
+| **Web UI (React SPA)** | Take notes, meeting review, plan review, board with Move to TODO, run detail, settings for the GitHub and Claude connections, audit timeline; talks only to the REST API |
 | **API (Django + DRF)** | REST API with JWT bearer auth, approvals, and idempotency keys; the OpenAPI schema generates the UI's typed client |
 | **Roles and access** | Three roles: Admin (Full access), Member (Approver access: edit, approve, operate the board), Non-member (Viewer access: read only). Viewer and Approver are access levels, not roles. |
 | **Meeting Analyst** | Extracts action items (coding work only) with source references; applies moderation and redaction first |
-| **Planner** | Produces tasks, acceptance criteria, test plan, path policy, and a category; proposes plan changes |
-| **Context Builder** | Deterministic selection of relevant files, allowed and protected paths |
-| **Tracker adapter (Jira)** | Creates tickets and sub-tasks, performs transitions, comments, polls and reconciles status |
+| **Planner** | Produces tasks, acceptance criteria, test plan, path policy, a category, a task type, and a 1–10 triage score (too complex items are flagged for splitting); proposes plan changes; creates GitHub issues and sub-issues through allow-listed MCP tools |
+| **Context Builder** | Deterministic selection of relevant files, allowed and protected paths; builds a token-budgeted Repo Map cached by `git diff`; prompts carry paths only |
+| **Tracker adapter (GitHub MCP client)** | Deterministic (no LLM): verifies and records what the Planner created, performs status transitions, comments, polls and reconciles status |
 | **Run orchestrator** | Starts exactly one run per approved backend ticket moved to TODO; manages retries and escalation |
-| **Coding agent runner** | The user's Claude Code on the local repo folder, on a new branch per task, with budgets |
-| **Verifier** | Tests, lint, security and secret scans, scope check, acceptance-criteria traceability |
+| **Coding agent runner** | The user's Claude Code on the local repo folder, on a new branch per task, with budgets, a skill chosen by task type, and pre-execution guardrails (blocked commands and files) |
+| **Verifier** | Tests, lint, security and secret scans, scope check, acceptance-criteria traceability; tells environment failures from code failures; suggests a commit message |
 | **Human gate** | Records versioned approvals; stale approvals are rejected |
 | **Audit log** | Append-only record of transitions, commands, prompts, diffs, and checks |
 
@@ -96,7 +96,7 @@ flowchart LR
 sequenceDiagram
     participant U as User
     participant T as TaskTraceAutomator
-    participant J as Jira board
+    participant J as GitHub Project board (MCP)
     participant C as Claude Code
     participant R as Local repo folder
 
@@ -105,17 +105,17 @@ sequenceDiagram
     U->>T: Edit and approve action items
     T->>T: Plan tasks and path policy
     U->>T: Approve plan
-    T->>J: Create backlog tickets (backend, frontend, bug, feature)
+    T->>J: Planner agent creates backlog issues via allow-listed MCP tools (backend, frontend, bug, feature)
     U->>T: Move ticket to TODO in our UI
-    T->>J: Transition to TODO, then In Progress (audited)
+    T->>J: Set Status to TODO, then In Progress (audited, deterministic MCP client)
     T->>C: Dispatch approved plan + context
-    C->>R: Edit code and tests on branch tta/KEY
+    C->>R: Edit code and tests on branch tta/issue-N
     T->>T: Verify (tests, scans, scope, traceability)
-    T->>J: Comment evidence, transition to QA
-    U->>J: Manual testing, then Done when the Definition of Done is met
+    T->>J: Comment evidence, set Status to QA
+    U->>J: Manual testing, then Status Done when the Definition of Done is met
 ```
 
-**Plan change after approval:** Planner writes a new plan version and a diff, a human approves it, and a sub-task is created under the parent ticket. It runs only when the sub-task itself reaches TODO.
+**Plan change after approval:** Planner writes a new plan version and a diff, a human approves it, and a sub-issue is created under the parent issue. It runs only when the sub-issue itself reaches TODO.
 
 ## 7. Workflow States
 
@@ -129,7 +129,7 @@ VERIFYING → NEEDS_HUMAN_REVIEW           (retry cap or policy violation; ticke
 QA → REPAIRING                           (human rejects; ticket back to TODO)
 ```
 
-Jira board columns: Backlog, TODO, In Progress, QA, Blocked, Done. Every transition is idempotent, locked, and written to the audit log. Moves made directly in Jira are detected by polling and flagged; the UI is the supported path.
+GitHub Project board columns: Backlog, TODO, In Progress, QA, Blocked, Done. Every transition is idempotent, locked, and written to the audit log. Moves made directly in GitHub are detected by polling and flagged; the UI is the supported path.
 
 ## 8. Data Overview
 
@@ -139,7 +139,8 @@ Jira board columns: Backlog, TODO, In Progress, QA, Blocked, Done. Every transit
 | Understanding | RequirementPackage, RequirementItem, Approval |
 | Planning | WorkItem, ImplementationPlan, PlanChange, ContextPackage |
 | Execution | CodingRun, VerificationReport, ActivityLog |
-| Integration | ExternalIssue (Jira key), WebhookEvent (optional), connection settings (encrypted) |
+| Memory | Lesson (written when a human marks a ticket Done) |
+| Integration | ExternalIssue (issue ref, node ID, Project item ID), WebhookEvent (optional), connection settings (encrypted) |
 | Governance | AuditEvent, ModelCall |
 
 PostgreSQL holds structured data and JSONB artifacts. Large files (recordings, logs, patches) sit on a local volume or MinIO with checksums in the database.
@@ -153,20 +154,21 @@ PostgreSQL holds structured data and JSONB artifacts. Large files (recordings, l
 | Data | PostgreSQL |
 | UI | React 18, TypeScript, Vite, TanStack Query, Tailwind CSS, dnd-kit; served by nginx |
 | AI | Free LLM tier (Groq / Gemini) or Ollama; faster-whisper; the user's Claude Code CLI for coding |
-| Tracker | The customer's Jira Cloud, REST API v3 |
+| Tracker | The customer's GitHub Issues and Projects (v2), through the GitHub MCP server |
 | Repo | Local git folder; commit, push, and PR are manual |
 | Runtime | Docker Compose with the repo folder mounted into the worker |
 | Verification | pytest, ruff, bandit, semgrep, gitleaks, pip-audit |
-| Deployment | Docker Compose on the machine that holds the repo; optional tunnel for Jira webhooks |
+| Deployment | Docker Compose on the machine that holds the repo; optional tunnel for GitHub webhooks |
 
 ## 10. Security Summary
 
 - Meeting text, repo files, and ticket text are treated as untrusted data.
 - Content moderation and secret/PII redaction run before any LLM call.
 - The coding agent receives only the approved plan, never raw ticket text.
-- Path allow-list and protected paths are enforced after the run, outside the model.
+- Dangerous commands (`rm -rf`, `curl`, `wget`, network installs, `git push`) and secret-file edits are blocked before they run; the path allow-list and protected paths are enforced again after the run, outside the model.
 - Claude Code works on a clean tree, on its own branch, with limited tools; nothing is committed or pushed.
-- The Jira token and Anthropic API key are encrypted at rest and never returned by the API.
+- The GitHub token and Anthropic API key are encrypted at rest and never returned by the API. The GitHub token is held only by the MCP server and is never given to Claude Code.
+- The Planner agent's GitHub write tools are an allow-list (create issue, create sub-issue, add to project); status changes are made only by the app.
 - Recording requires explicit consent and shows a visible recording state.
 - Budgets cap turns, time, tokens, diff size, and retries.
 
@@ -174,7 +176,7 @@ PostgreSQL holds structured data and JSONB artifacts. Large files (recordings, l
 
 | Area | Target |
 |---|---|
-| Recoverability | Worker restart or duplicate event never creates duplicate Jira tickets or runs |
+| Recoverability | Worker restart or duplicate event never creates duplicate GitHub issues or runs |
 | Traceability | Every requirement, criterion, test, and diff is linked back to its source; every status change has an actor |
 | Safety | Zero out-of-scope changes reach QA |
 | Cost | Free infrastructure; bounded Claude Code spend per run on the customer's own key |
@@ -185,8 +187,8 @@ PostgreSQL holds structured data and JSONB artifacts. Large files (recordings, l
 | Risk | Mitigation |
 |---|---|
 | Weak free-LLM output | Schema validation, repair retry, chunking, provider fallback |
-| Jira webhooks unavailable locally | Polling is the default |
-| Users move tickets directly in Jira | UI is the supported path; polling flags illegal moves; the app never sets Done |
+| GitHub webhooks unavailable locally | Polling is the default (GitHub cannot reach localhost) |
+| Users move tickets directly in GitHub | UI is the supported path; polling flags illegal moves; the app never sets Done |
 | Claude Code edits the user's real folder | Clean-tree check, task branch, path allow-list, post-run diff check |
 | Claude Code cost or terms | Customer's own API key, budgets, small tasks, swappable agent adapter |
 | Scope creep to multi-agent | Baseline first, specialists only on evidence |
@@ -196,7 +198,7 @@ PostgreSQL holds structured data and JSONB artifacts. Large files (recordings, l
 1. Foundation: models, state machine, audit, auth.
 2. Understand: ingestion, Analyst, action-item review.
 3. Plan: Planner, Context Builder, plan review.
-4. Tracker: Jira and Claude connection settings, Jira ticket creation, board, Move to TODO, polling.
+4. Tracker: GitHub and Claude connection settings, Planner MCP tool allow-list and GitHub issue creation, board, Move to TODO, polling.
 5. Build and verify: local runner, Claude Code, verification, move to QA.
 6. Hardening: retries, crash and duplicate-event tests.
 7. Evaluation: fixed test set against a manual baseline.

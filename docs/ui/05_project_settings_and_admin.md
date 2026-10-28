@@ -1,13 +1,13 @@
-# UI Design Module 5 — Project Settings & Jira Cloud Integration
+# UI Design Module 5 — Project Settings & GitHub Integration (GitHub MCP)
 
-This module details how Jira Cloud credentials are authenticated, verified, and mapped to TaskTraceAutomator projects, as well as team role and permission management.
+This module details how GitHub credentials (a token held by the GitHub MCP server: classic for a personal board, classic or organization-scoped fine-grained for an organization board) are authenticated, verified, and mapped to TaskTraceAutomator projects, as well as team role and permission management.
 
 ---
 
-## 5.1 Project Settings & Jira Cloud Integration (`/projects/:id/settings`)
+## 5.1 Project Settings & GitHub Integration (`/projects/:id/settings`)
 
 ### Purpose
-Admin configuration screen for connecting to Jira Cloud via REST API v3, testing the connection, mapping default issue types, and configuring webhook callbacks.
+Admin configuration screen for connecting to GitHub Issues and Projects through the GitHub MCP server, testing the connection, mapping the Project `Status` options to our states, and configuring webhook callbacks.
 
 ### ASCII Wireframe
 ```text
@@ -16,51 +16,51 @@ Admin configuration screen for connecting to Jira Cloud via REST API v3, testing
 +--------------------------------------------------------------------------------------------------+
 |  Project Settings: Core API                                                                      |
 |                                                                                                  |
-|  [ Tab: 🔌 Jira ]  [ Tab: 🤖 Claude Code ]  [ Tab: 👥 Team & Permissions ]  [ Tab: ⚙ General ]   |
+|  [ Tab: 🔌 GitHub ]  [ Tab: 🤖 Claude Code ]  [ Tab: 👥 Team & Permissions ]  [ Tab: ⚙ General ]    |
 |                                                                                                  |
-|  Jira Cloud Connection (REST API v3)                                                             |
-|  Connect TaskTraceAutomator to your Atlassian Jira workspace to sync tickets and sub-tasks.      |
+|  GitHub Connection (GitHub MCP server)                                                           |
+|  Connect TaskTraceAutomator to your GitHub repo Issues and Projects board.                       |
 |                                                                                                  |
-|  Jira Cloud Domain:                                                                              |
-|  [ https://tasktrace.atlassian.net                                                             ] |
+|  Board owner type:  (•) Personal account   ( ) Organization   (fields change)                    |
+|  Owner login: [ yasmin-poc-works ]      Repository: [ core-platform ]                            |
 |                                                                                                  |
-|  Jira Account Email:                                                                             |
-|  [ integrations@company.com                                                                    ] |
+|  GitHub Project number (Projects v2):                                                            |
+|  [ 3                                                                                          ]  |
 |                                                                                                  |
-|  Jira API Token:                                                                                 |
+|  Token (Personal: classic with `project` + `repo`. Org: classic, or fine-grained for the org):   |
 |  [ ******************************************************                                    👁 ] |
-|  Tokens are encrypted using AES-256 in the database. [Create API Token in Atlassian Console ↗]   |
+|  Tokens are encrypted using AES-256 in the database. [Create a token on GitHub ↗]                |
 |                                                                                                  |
-|  [ Test Jira Connection ⚡ ]  -->  [ Status: Connected to "TaskTrace Org" (Latency: 140ms) ✓ ]  |
-|                                                                                                  |
-|  ----------------------------------------------------------------------------------------------  |
-|  Project & Issue Mapping:                                                                        |
-|                                                                                                  |
-|  Target Jira Project:                                                                            |
-|  [ CORE - Core Platform Services (Key: CORE) ▼ ]                                                 |
-|                                                                                                  |
-|  Default Issue Type for Work Items:                                                              |
-|  [ Story ▼ ]  (Options: Story, Task, Improvement)                                                |
-|                                                                                                  |
-|  Default Issue Type for Plan Changes:                                                            |
-|  [ Sub-task ▼ ]  (Automatically created under parent ticket)                                    |
-|                                                                                                  |
-|  Status mapping (our state -> your Jira workflow status):                                        |
-|  Backlog [Backlog ▼]  TODO [To Do ▼]  In Progress [In Progress ▼]  QA [QA ▼]  Done [Done ▼]    |
-|  [ Test mapping ] lists any status missing from the project's workflow.                          |
+|  [ Test GitHub Connection ⚡ ] --> [ MCP reachable ✓  Issues ✓  Projects ✓  Repo access ✓ ]       |
 |                                                                                                  |
 |  ----------------------------------------------------------------------------------------------  |
-|  Inbound Jira Webhook (Optional for Live Board Sync):                                            |
+|  Repository & Board Mapping:                                                                     |
+|                                                                                                  |
+|  Target Project board:                                                                           |
+|  [ #3 Core Platform Board (acme) ▼ ]                                                             |
+|                                                                                                  |
+|  Default labels for Work Items:                                                                  |
+|  [ backend ✕ ] [ frontend ✕ ] [ bug ✕ ] [ feature ✕ ]  (category labels set by the Planner)      |
+|                                                                                                  |
+|  Plan changes:                                                                                   |
+|  [ Sub-issue ▼ ]  (Created by the Planner agent under the parent issue after approval)           |
+|                                                                                                  |
+|  Status mapping (our state -> your Project `Status` field option):                               |
+|  Backlog [Backlog ▼] TODO [Todo ▼] In Progress [In Progress ▼] QA [QA ▼] Done [Done ▼]           |
+|  [ Test mapping ] lists any Status option missing from the Project.                              |
+|                                                                                                  |
+|  ----------------------------------------------------------------------------------------------  |
+|  Inbound GitHub Webhook (Optional for Live Board Sync):                                          |
 |                                                                                                  |
 |  Webhook Endpoint URL:                                                                           |
-|  [ https://api.tasktrace.com/api/integrations/jira/webhook/                          ] [Copy 📋] |
+|  [ https://api.tasktrace.com/api/integrations/github/webhook/                          ] [Copy 📋] |
 |                                                                                                  |
-|  Webhook HMAC Secret:                                                                            |
-|  [ whsec_984f...c120                                                                 ] [Copy 📋] |
+|  Webhook secret (verifies X-Hub-Signature-256):                                                  |
+|  [ whsec_984f...c120                                                                 ] [Copy 📋]  |
 |                                                                                                  |
-|  [ Note: If public webhooks cannot reach your machine, Celery Beat automatically polls Jira. ]   |
+|  [ Note: If public webhooks cannot reach your machine, Celery Beat automatically polls GitHub. ] |
 |                                                                                                  |
-|                                                [ Revert Changes ]        [ Save Jira Settings ]  |
+|                                                [ Revert Changes ]        [ Save GitHub Settings ]  |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -74,24 +74,24 @@ Admin configuration for the customer's own Claude Code: the Anthropic API key, t
 ### ASCII Wireframe
 ```text
 +--------------------------------------------------------------------------------------------------+
-|  [ Tab: 🔌 Jira ]  [ Tab: 🤖 Claude Code ]  [ Tab: 👥 Team & Permissions ]  [ Tab: ⚙ General ]   |
+|  [ Tab: 🔌 GitHub ]  [ Tab: 🤖 Claude Code ]  [ Tab: 👥 Team & Permissions ]  [ Tab: ⚙ General ]    |
 |                                                                                                  |
 |  Claude Code Connection                                                                          |
 |  TaskTraceAutomator runs YOUR Claude Code with YOUR Anthropic API key. Costs go to your account. |
 |                                                                                                  |
-|  Anthropic API Key:   [ sk-ant-**********************************                          👁 ] |
+|  Anthropic API Key:   [ sk-ant-**********************************                          👁 ]   |
 |  Keys are encrypted at rest and never shown again.                                               |
 |  Model:               [ claude-sonnet-5-5 ▼ ]                                                    |
-|  Per-run budget:      Max turns [ 30 ]   Timeout [ 20 min ]   Cost cap [ $ 5.00 ]               |
+|  Per-run budget:      Max turns [ 30 ]   Timeout [ 20 min ]   Cost cap [ $ 5.00 ]                |
 |                                                                                                  |
-|  Local backend folder:   [ C:\work\core-api                                          ] [Browse] |
+|  Local backend folder:   [ C:\work\core-api                                          ] [Browse]  |
 |  Test command:           [ pytest -q                                                    ]        |
 |  Lint command:           [ ruff check .                                                 ]        |
 |  Protected paths:        [ .env, .github/**, requirements*.txt                          ]        |
 |                                                                                                  |
-|  [ Test Claude Connection ⚡ ] --> [ CLI found ✓  Key valid ✓  Folder is a clean git repo ✓ ]    |
+|  [ Test Claude Connection ⚡ ] --> [ CLI found ✓  Key valid ✓  Folder is a clean git repo ✓ ]     |
 |                                                                                                  |
-|  Note: Each task runs on its own branch (tta/<ticket-key>). Nothing is committed or pushed.      |
+|  Note: Each task runs on its own branch (tta/issue-<number>). Nothing is committed or pushed.    |
 |        You review the branch and commit, push, and open PRs yourself.                            |
 |                                                                                                  |
 |                                              [ Revert Changes ]      [ Save Claude Settings ]    |
@@ -110,7 +110,7 @@ Allows Project Admins to assign users to project roles and access levels (Viewer
 +--------------------------------------------------------------------------------------------------+
 |  Project Settings: Core API / Team & Permissions                                                 |
 +--------------------------------------------------------------------------------------------------+
-|  Manage who can view discussions, approve requirements, and create Jira tickets.                 |
+|  Manage who can view discussions, approve requirements, and create GitHub issues.                |
 |                                                                                                  |
 |  [ Invite Member by Email...                             ]  [ Role: Member (Approver) ▼ ] [Invite]
 |                                                                                                  |
@@ -119,19 +119,19 @@ Allows Project Admins to assign users to project roles and access levels (Viewer
 |  |-----------------------+-------------+--------------+--------------------------+------------|  |
 |  | Sarah Chen            | Member      | APPROVER     | Can transcribe meetings, | [Edit]     |  |
 |  | sarah@company.com     |             |              | approve requirements &   |            |  |
-|  |                       |             |              | plans, push to Jira      |            |  |
+|  |                       |             |              | plans, create GitHub issues |         |  |
 |  |-----------------------+-------------+--------------+--------------------------+------------|  |
 |  | Alex Rivera           | Admin       | FULL ACCESS  | Full admin, settings,    | [Owner]    |  |
-|  | alex@company.com      |             |              | Jira credentials, roles  |            |  |
+|  |                       |             |              | GitHub token, roles      |            |  |
 |  |-----------------------+-------------+--------------+--------------------------+------------|  |
 |  | External Reviewer     | Non-Member  | VIEWER       | Read-only view of boards | [Remove]   |  |
 |  | auditor@client.com    |             |              | and traceability proofs  |            |  |
 |  +--------------------------------------------------------------------------------------------+  |
 |                                                                                                  |
 |  Access Levels Breakdown:                                                                        |
-|  • Viewer: Read-only access to meetings, requirements, and board. Cannot approve or push tickets.|
-|  • Approver: Can upload audio, edit/split requirements, sign off plans, and create Jira tickets. |
-|  • Full Admin: Complete control over project settings, Jira tokens, webhooks, and team roles.   |
+|  • Viewer: Read-only access to meetings, requirements, and board. Cannot approve or create issues|
+|  • Approver: Can upload audio, edit/split requirements, sign off plans, and create GitHub issues. |
+|  • Full Admin: Complete control over project settings, GitHub tokens, webhooks, and team roles.  |
 +--------------------------------------------------------------------------------------------------+
 ```
 

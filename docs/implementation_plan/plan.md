@@ -5,17 +5,17 @@
 
 ## 1. Objective
 
-Build the MVP path: meeting input → action items → plan → Jira backlog ticket → Move to TODO → Claude Code run on the local backend folder → verification → QA → human Done. TaskTraceAutomator orchestrates the customer's own Jira and Claude Code; it does not replace them. Every consequential step needs human approval, the app never sets Done, and nothing merges automatically. Commit, push, and PR are manual.
+Build the MVP path: meeting input → action items → plan → GitHub backlog ticket → Move to TODO → Claude Code run on the local backend folder → verification → QA → human Done. TaskTraceAutomator orchestrates the customer's own GitHub Issues and Projects board (through the GitHub MCP server) and Claude Code; it does not replace them. Every consequential step needs human approval, the app never sets Done, and nothing merges automatically. Commit, push, and PR are manual.
 
 ## 2. Guiding Constraints
 
 - One coding agent with staged responsibilities. No specialist agents until evaluation shows a measured benefit.
-- Free or low-cost stack (Django, Celery, Postgres, Docker). Jira and Claude Code are the customer's own; their credentials are entered in the UI and stored encrypted.
-- MVP codes the **backend only**. Frontend tickets are created in Jira but not auto-run until the next MVP.
+- Free or low-cost stack (Django, Celery, Postgres, Docker). GitHub and Claude Code are the customer's own; their credentials are entered in the UI and stored encrypted.
+- MVP codes the **backend only**. Frontend tickets are created in GitHub but not auto-run until the next MVP.
 - Typed, versioned artifacts, not chat history, carry context between stages.
 - Authentication uses JWT bearer tokens. Three roles: Admin (Full access), Member (Approver access), Non-member (Viewer access). Viewer and Approver are access levels, not roles; the API enforces them (Architecture §9.3).
 - The UI is a React + TypeScript SPA. It talks only to the DRF API through a client generated from the OpenAPI schema, and the backend stays the sole authority on workflow rules.
-- GitHub integration and pull request creation are a **good-to-have** (G1). In the MVP the task branch, diff, and verification report are the handoff and the user commits, pushes, and opens PRs manually.
+- Automatic pull request creation (through the same GitHub MCP server) is a **good-to-have** (G1). GitHub Issues and Projects are already the tracker in the MVP. In the MVP the task branch, diff, and verification report are the handoff and the user commits, pushes, and opens PRs manually.
 - Good-to-have items (section 9) are never prerequisites for MVP exit checks. If time is short, drop them in the order listed there.
 
 ## 3. Phases
@@ -24,11 +24,11 @@ Build the MVP path: meeting input → action items → plan → Jira backlog tic
 |---|---|---|---|---|
 | 0 | Foundation | Compose stack, Django apps, React frontend scaffold with generated API client, models, audit, state machine, auth | Transitions are tested and idempotent | §7, §8, §13 |
 | 1 | Understand | Take notes (live capture), file and typed input, moderation, Meeting Analyst, action-item review UI, approvals | A draft package is corrected and approved | §5.1, §5.2, §5.9 |
-| 2 | Plan | Planner, Context Builder, plan review with allow-list, plan versions | Reviewer can see why each file is in scope | §5.3, §5.4 |
-| 3 | Tracker | Jira and Claude connection settings, Jira ticket creation, board UI, Move to TODO, polling and reconciliation, `PlanChange` sub-tasks | Moving a ticket to TODO in the UI creates a queued run exactly once | §5.5, §5.6, §9 |
-| 4 | Build and verify | Local runner, Claude Code adapter, scope enforcement, scanners, report, move to QA | An out-of-scope edit is blocked; a good run leaves a task branch and moves the ticket to QA | §5.7, §5.8, §6 |
-| 5 | Hardening | Retry cap, crash recovery, duplicate and delayed webhook tests | Restarting a worker mid-run creates no duplicate Jira tickets or runs | §10, §11, §15 |
-| 6 | Evaluation | Fixed evaluation set, metrics | Report compares the staged agent against a manual baseline | Plan §evaluation |
+| 2 | Plan | Planner with task type and triage score, Context Builder with a token-budgeted Repo Map, plan review with allow-list, plan versions | Reviewer can see why each file is in scope | §5.3, §5.4 |
+| 3 | Tracker | GitHub MCP server and Claude connection settings, Planner MCP tool allow-list and GitHub issue creation, board UI, Move to TODO, polling and reconciliation, `PlanChange` sub-issues | Moving a ticket to TODO in the UI creates a queued run exactly once | §5.5, §5.6, §9 |
+| 4 | Build and verify | Local runner, pre-execution guardrails, skills per task type, Claude Code adapter, scope enforcement, scanners, report with suggested commit message, move to QA | A blocked command or protected-file edit is stopped before it runs; an out-of-scope edit is blocked; a good run leaves a task branch and moves the ticket to QA | §5.7, §5.8, §6 |
+| 5 | Hardening | Retry cap, crash recovery, duplicate and delayed webhook tests | Restarting a worker mid-run creates no duplicate GitHub issues or runs | §10, §11, §15 |
+| 6 | Evaluation | Fixed evaluation set, metrics, lesson memory (runs compared with and without lessons) | Report compares the staged agent against a manual baseline | Plan §evaluation |
 
 Phases run in order. Within a phase, tasks marked as independent in task.md can run in parallel.
 
@@ -69,7 +69,7 @@ Each task row in task.md carries an **Arch ref** column pointing to the architec
 | `BLOCKED` | Cannot proceed. The Comments column must name the blocker. Keep this status until it is cleared. |
 | `COMPLETE` | Done and meets the Definition of Done. Set only on completion. |
 
-- A parent task becomes `COMPLETE` only when all its subtasks are `COMPLETE`.
+- A parent task becomes `COMPLETE` only when all its sub-issues are `COMPLETE`.
 - A parent is `IN_PROGRESS` if any subtask is, and `BLOCKED` if any subtask is blocked and none are in progress.
 - Every status change needs a dated entry in the Comments column.
 
@@ -77,9 +77,9 @@ Each task row in task.md carries an **Arch ref** column pointing to the architec
 
 | Item | Handling |
 |---|---|
-| Commit, push, and PR | Decided: manual in the MVP. GitHub is good-to-have G1. |
-| Jira Cloud cannot reach webhooks on localhost | Polling is the default (T3.5.c); webhooks are optional. |
-| Users move tickets directly in Jira | UI is the supported path; polling flags illegal moves; the app never sets Done. |
+| Commit, push, and PR | Decided: manual in the MVP. Automatic PRs are good-to-have G1. |
+| GitHub cannot reach webhooks on localhost | Polling is the default (T3.5.c); webhooks are optional. |
+| Users move tickets directly in GitHub | UI is the supported path; polling flags illegal moves; the app never sets Done. |
 | Using a Claude subscription login inside another product | Default to the user's API key; check Anthropic's terms before supporting a login. |
 | Free LLM tiers return weak JSON | Pydantic validation with one repair retry; chunking (T1.3). |
 | Claude Code cost | Customer's own key; budget caps in T4.4; small tasks only. Free fallback agent is G5. |
@@ -93,12 +93,13 @@ Optional enhancements tracked in the Good-to-Have section of [task.md](task.md).
 
 | ID | Option | Why it is optional | Enable when |
 |---|---|---|---|
-| G1 | GitHub integration and pull request creation | Task branch, diff, and report already give a reviewable handoff; commit, push, and PR are manual | A team wants automated PRs |
+| G1 | Automatic pull request creation (GitHub MCP) | Task branch, diff, and report already give a reviewable handoff; commit, push, and PR are manual | A team wants automated PRs |
 | G2 | Audio file upload (faster-whisper) | Live Take notes is the primary path | Users have recordings |
 | G12 | YouTube URL as a source | Live capture covers a video playing on the system | Teams need to ingest recorded talks |
+| G13 | Git worktree per task | MVP keeps the clean-tree check and task branch | The user needs to keep working during a run, or runs should be parallel |
 | G5 | Free fallback coding agent | Claude Code is the required agent | Cost or access blocks Claude Code |
 | G6 | pgvector semantic retrieval | Deterministic retrieval comes first | P6 shows missed relevant files |
-| G7 | Alternative trackers (Linear, Trello) | Jira covers the MVP | A team already works in another tracker |
+| G7 | Alternative trackers (Linear, Trello) | GitHub Issues and Projects cover the MVP; the tracker adapter boundary keeps others possible | A team already works in another tracker |
 | G9 | Hosted deployment on a free VM | Docker Compose on a laptop is enough | Webhooks or shared access need a stable host |
 | G3 | MinIO object storage | Local volume is enough | Artifacts outgrow the local volume |
 | G4 | Prometheus and Grafana | Structured logs are enough | Operating the system needs dashboards |

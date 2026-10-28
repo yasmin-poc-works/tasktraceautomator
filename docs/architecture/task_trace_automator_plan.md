@@ -2,7 +2,7 @@
 
 ## Product and Architecture Document
 
-**Working product identity:** TaskTraceAutomator — an AI-assisted, traceable workflow from meeting decisions to Jira tickets and reviewable code changes.
+**Working product identity:** TaskTraceAutomator — an AI-assisted, traceable workflow from meeting decisions to GitHub issues and reviewable code changes.
 
 **Status:** Proposed architecture  
 **Primary audience:** Product owner, engineering team, technical stakeholders  
@@ -13,7 +13,7 @@
 
 ## 1. Executive Summary
 
-TaskTraceAutomator converts a product or engineering conversation into an auditable, reviewable software change. A user uploads or records a meeting, adds optional project context, reviews the extracted requirements, and approves a generated implementation plan. The platform then creates Jira backlog tickets, waits for an approved ticket to enter TODO, automatically dispatches the ticket to Claude Code, prepares bounded coding context, verifies the resulting changes, and produces a pull request or implementation package for human review.
+TaskTraceAutomator converts a product or engineering conversation into an auditable, reviewable software change. A user uploads or records a meeting, adds optional project context, reviews the extracted requirements, and approves a generated implementation plan. The platform then creates GitHub backlog issues on a GitHub Projects board through the GitHub MCP server, waits for an approved ticket to enter TODO, automatically dispatches the ticket to Claude Code, prepares bounded coding context, verifies the resulting changes, and produces a pull request or implementation package for human review.
 
 The product is not primarily an artificial “engineering team.” The team-like roles are an implementation pattern used to make one reliable workflow understandable and governable:
 
@@ -91,7 +91,7 @@ Meeting input (live Take notes, uploaded file, typed text)
     ↓
 Understand: transcript → coding action items (moderated, redacted)
     ↓ human approval
-Plan: approved action items → tasks, implementation plan, test plan → Jira backlog
+Plan: approved action items → tasks, implementation plan, test plan → GitHub backlog
     ↓ human approval
 Build: ticket moved to TODO → user's Claude Code edits the local backend folder on a task branch
     ↓ automated verification
@@ -116,13 +116,13 @@ For a small, well-scoped change, a user should be able to move from “we discus
 - Runs tests, linting, security checks, and scope checks.
 - Maps acceptance criteria to tests and verification evidence.
 - Hands off the task branch, diff, and verification report for review. Commit, push, and pull requests are manual; GitHub pull request creation is a good-to-have.
-- Provides a Jira-backed workflow UI so users can manage approved work without opening Jira. The Jira connection is the customer's own and is configured in the UI. Backlog items (categorized backend, frontend, bug, or feature name) and plan-change sub-tasks are created automatically. The app moves tickets to In Progress and QA; only a human moves them to Done.
+- Provides a GitHub-backed workflow UI so users can manage approved work without opening GitHub. Tracking uses GitHub Issues and a GitHub Projects (v2) board, accessed through the **GitHub MCP server**. The connection is the customer's own and is configured in the UI. The Planner agent creates backlog issues (categorized backend, frontend, bug, or feature name) and plan-change sub-issues through an allow-listed set of MCP tools. The app, not the model, moves tickets to In Progress and QA; only a human moves them to Done.
 - Stores the workflow history and artifacts for later audit and learning.
 
 ### 3.3 What the product does not do in the MVP
 
 - Autonomously merge code into the default branch, or commit, push, or open pull requests (manual in the MVP).
-- Provide its own issue tracker or its own coding model; it orchestrates the customer's Jira and Claude Code.
+- Provide its own issue tracker or its own coding model; it orchestrates the customer's GitHub and Claude Code.
 - Write frontend code (next MVP, from an uploaded or approved design).
 - Treat a transcript as an approved specification.
 - Run an unrestricted coding agent against an entire repository.
@@ -146,7 +146,7 @@ For a small, well-scoped change, a user should be able to move from “we discus
 
 ### 4.2 Core domain objects
 
-The product revolves around a `Project`, a `Meeting`, a `RequirementPackage`, a `WorkItem`, an optional `ExternalIssue` link, a `ContextPackage`, a `Run`, and a `VerificationReport`. These objects are immutable or versioned where auditability matters. A work item stores its Jira issue key, synchronization state, and last observed status without making Jira the internal source of truth.
+The product revolves around a `Project`, a `Meeting`, a `RequirementPackage`, a `WorkItem`, an optional `ExternalIssue` link, a `ContextPackage`, a `Run`, and a `VerificationReport`. These objects are immutable or versioned where auditability matters. A work item stores its GitHub issue reference (`owner/repo#number`, node ID, and Project item ID), synchronization state, and last observed status without making GitHub the internal source of truth.
 
 ### 4.3 Product boundary
 
@@ -156,26 +156,26 @@ The platform owns orchestration, structured artifacts, approvals, execution cont
 
 ## 5. User Workflow
 
-### 5.0 TaskTraceAutomator as the Jira control plane
+### 5.0 TaskTraceAutomator as the GitHub control plane
 
-TaskTraceAutomator is the primary user interface for the approved Jira workflow. After a human approves a plan generated from meeting notes, the Planner Agent automatically creates the Jira backlog issue. If the approved plan later changes, the Planner Agent automatically creates a Jira sub-task for that change. From the TaskTraceAutomator UI, an authorized human can perform optional workflow actions without visiting the Jira workspace:
+TaskTraceAutomator is the primary user interface for the approved GitHub workflow. After a human approves a plan generated from meeting notes, the Planner Agent automatically creates the GitHub backlog issue. If the approved plan later changes, the Planner Agent automatically creates a GitHub sub-issue for that change. From the TaskTraceAutomator UI, an authorized human can perform optional workflow actions without visiting GitHub:
 
 - move issues between configured statuses such as Backlog, TODO, In Progress, QA, Blocked, and Done;
 - add, edit, and view comments;
 - block or unblock work with a reason;
-- view automatically created Jira sub-tasks for plan changes and approve their execution;
+- view automatically created GitHub sub-issues for plan changes and approve their execution;
 - assign work, set priority, add labels, and update permitted fields;
-- view the Jira issue key, status, history, run status, branch name, and verification evidence.
+- view the GitHub issue reference, status, history, run status, branch name, and verification evidence.
 
 The app, not the model, performs every transition. It moves Backlog → TODO (on user action), TODO → In Progress (run starts), and In Progress → QA (verification passes). Only a human moves QA → Done.
 
-Each UI action is an authenticated TaskTraceAutomator command. The backend applies the corresponding Jira API operation, stores the result and external reference, and records an audit event. Polling (default) and optional webhooks reflect changes made directly in Jira back into TaskTraceAutomator; such changes are flagged, and the UI is the supported path. Because the transition goes through our API, a move made in our UI is fully traced (who, when, which ticket). The UI should clearly show synchronization failures and provide a safe retry action.
+Each UI action is an authenticated TaskTraceAutomator command. The backend applies the corresponding GitHub MCP operation as a deterministic MCP client call (no LLM), stores the result and external reference, and records an audit event. Polling (default) and optional webhooks reflect changes made directly in GitHub back into TaskTraceAutomator; such changes are flagged, and the UI is the supported path. Because the transition goes through our API, a move made in our UI is fully traced (who, when, which ticket). The UI should clearly show synchronization failures and provide a safe retry action.
 
-This UI is a focused **TaskTrace board**, not a replacement issue-tracking product. It should expose only the Jira workflow fields and actions needed by this platform. Jira remains the backend issue system for ticket identity, status, comments, sub-task relationships, and external integrations.
+This UI is a focused **TaskTrace board**, not a replacement issue-tracking product. It should expose only the GitHub workflow fields and actions needed by this platform. GitHub Issues and Projects remain the backend issue system for ticket identity, status (the Project `Status` field), comments, sub-issue relationships, and external integrations.
 
 ### 5.1 Create a project
 
-1. The user creates a project and points it at the **local backend repository folder**. An admin enters the Jira connection (site URL, email, API token, project key, status mapping) and the Claude connection (Anthropic API key, model, budgets) in the UI. Both are stored encrypted and tested before saving.
+1. The user creates a project and points it at the **local backend repository folder**. An admin enters the GitHub connection (board owner type: personal account or organization; owner login, repository, Project number, and an access token of the type that owner type allows, which is a classic token with `project` and `repo` for a personal board and a classic or organization-scoped fine-grained token for an organization board; mapping of our states to the Project `Status` options) and the Claude connection (Anthropic API key, model, budgets) in the UI. Both are stored encrypted and tested before saving.
 2. The user configures the language, test command, lint command, protected paths, coding conventions, and approval policy.
 3. The platform performs a read-only repository scan to build a lightweight project profile.
 4. The user confirms the profile and marks the project ready for a meeting.
@@ -231,33 +231,33 @@ The Planner or Context Builder proposes:
 
 The engineering lead can adjust the allow-list and plan before approving it.
 
-### 5.6 Create Jira backlog tickets after plan approval
+### 5.6 Create GitHub backlog tickets after plan approval
 
-When a human approves the implementation plan, the Planner Agent automatically creates one or more Jira issues in the configured project backlog. Jira is the execution queue for approved work, while TaskTraceAutomator remains the source of truth for artifact versions, approvals, context policy, agent runs, and verification evidence. No human Jira visit is required for issue creation.
+When a human approves the implementation plan, the Planner Agent automatically creates one or more GitHub issues in the configured repository and adds them to the Project board in Backlog, using only allow-listed GitHub MCP tools (create issue, create sub-issue, add to project). GitHub is the execution queue for approved work, while TaskTraceAutomator remains the source of truth for artifact versions, approvals, context policy, agent runs, and verification evidence. No human GitHub visit is required for issue creation.
 
-Each Jira issue should include the approved work-item summary, acceptance criteria, definition of done, dependencies, approved paths, test commands, the TaskTraceAutomator work-item ID, and the immutable plan version. Ticket creation must be idempotent: the platform stores the Jira issue key as a durable external reference so retries cannot create duplicates.
+Each GitHub issue should include the approved work-item summary, acceptance criteria, definition of done, dependencies, approved paths, test commands, the TaskTraceAutomator work-item ID, and the immutable plan version. Ticket creation must be idempotent: each issue body carries a hidden marker with the work-item ID and plan version, the adapter searches for that marker before creating, and the platform stores the issue reference and Project item ID as a durable external reference so retries cannot create duplicates. After every Planner tool call the app verifies the result and records an audit event; the Planner has no tool that changes status, closes, or deletes issues.
 
-### 5.6.1 Handle modifications to the approved plan as Jira sub-tasks
+### 5.6.1 Handle modifications to the approved plan as GitHub sub-issues
 
-The original approved plan is immutable. If the Planner Agent or a human reviewer identifies any modification after approval—such as new scope, changed acceptance criteria, additional files, a new dependency, altered API or database behavior, or a new test requirement—the Planner Agent must create a new plan revision and represent the change as a Jira **sub-task** under the original Jira issue.
+The original approved plan is immutable. If the Planner Agent or a human reviewer identifies any modification after approval—such as new scope, changed acceptance criteria, additional files, a new dependency, altered API or database behavior, or a new test requirement—the Planner Agent must create a new plan revision and represent the change as a GitHub **sub-issue** under the original GitHub issue.
 
 The Planner Agent must not silently rewrite the parent ticket or fold the change into the existing coding run. For every modification it should:
 
 1. compare the proposed plan with the approved plan version;
 2. explain the difference and why it is required;
-3. create a versioned `PlanChange` / sub-task artifact linked to the parent work item;
+3. create a versioned `PlanChange` / sub-issue artifact linked to the parent work item;
 4. request human approval when the change affects scope, risk, permissions, contracts, or protected paths;
-5. create the Jira sub-task only after the revised plan is approved;
-6. include the parent issue key, original plan version, new plan version, changed paths, acceptance criteria, and test evidence requirements;
-7. keep the sub-task blocked until its own approved plan is ready for execution.
+5. create the GitHub sub-issue only after the revised plan is approved;
+6. include the parent issue reference, original plan version, new plan version, changed paths, acceptance criteria, and test evidence requirements;
+7. keep the sub-issue blocked until its own approved plan is ready for execution.
 
-The parent ticket remains the source of the original scope. The Planner Agent automatically creates the sub-task after the revised plan is approved; the user does not manually create it in Jira. The sub-task is independently traceable and may be dispatched to Claude Code only when the sub-task itself moves to **TODO**. If the modification invalidates the parent run, the platform pauses the parent issue and marks it **Needs Approval** rather than starting parallel work automatically.
+The parent ticket remains the source of the original scope. The Planner Agent automatically creates the sub-issue after the revised plan is approved; the user does not manually create it in GitHub. The sub-issue is independently traceable and may be dispatched to Claude Code only when the sub-issue itself moves to **TODO**. If the modification invalidates the parent run, the platform pauses the parent issue and marks it **Needs Approval** rather than starting parallel work automatically.
 
-### 5.7 Run the coding stage when Jira moves the ticket to TODO
+### 5.7 Run the coding stage when GitHub moves the ticket to TODO
 
-The user moves the issue to **TODO** from the TaskTraceAutomator UI (a Move to TODO button or drag). The backend performs the Jira transition through the Jira API and records the command. Polling (and optional webhooks) detect transitions made elsewhere; those are flagged and start a run only if the project allows it. When a managed `backend` issue moves to **TODO**, the platform verifies that the issue belongs to the configured project, references an approved plan, and has no active or completed coding run. It then starts a durable coding run and transitions the issue to **In Progress**.
+The user moves the issue to **TODO** from the TaskTraceAutomator UI (a Move to TODO button or drag). The backend updates the Project item's Status through the GitHub MCP server and records the command. Polling (and optional webhooks) detect transitions made elsewhere; those are flagged and start a run only if the project allows it. When a managed `backend` issue moves to **TODO**, the platform verifies that the issue belongs to the configured project, references an approved plan, and has no active or completed coding run. It then starts a durable coding run and transitions the issue to **In Progress**.
 
-The user's own Claude Code, using their API key, receives the approved ticket context through the Coding Agent adapter and works on the local backend folder, on a new task branch created from a clean tree, with the approved path policy and execution budgets. The app posts the run status back to Jira. Frontend tickets are not auto-run in the MVP. Arbitrary text added to a Jira issue must not override the internally approved plan.
+The user's own Claude Code, using their API key, receives the approved ticket context through the Coding Agent adapter and works on the local backend folder, on a new task branch created from a clean tree, with the approved path policy and execution budgets. The app posts the run status back to GitHub. Frontend tickets are not auto-run in the MVP. Arbitrary text added to a GitHub issue must not override the internally approved plan.
 
 The Coding Agent works on the task branch with:
 
@@ -267,7 +267,13 @@ The Coding Agent works on the task branch with:
 - relevant source files;
 - explicit allowed and protected paths;
 - a test-first or test-alongside instruction;
+- a **skill** chosen by the work item's task type (`bug_fix`, `feature_addition`, `dependency_update`, `documentation`, or `config_change`), stored as a versioned object with instructions, workflow steps, example prompts, and forbidden actions;
+- up to three similar lessons from past Done tickets, labelled as untrusted hints;
 - tool and time budgets.
+
+Every run follows the same inner loop: read the context files on demand, write a short change plan, make small surgical edits, run the tests, and fix and retry on failure (retry cap 2, then human review). The prompt carries file paths, never raw file contents. The agent also writes a proposed diff and its change plan as run artifacts for the reviewer.
+
+Dangerous actions are blocked **before** they run, not only checked afterwards: destructive deletes, network downloads and installs, `git push`, paths outside the repository, and edits to secret files (`.env`, `*.pem`, `*.key`, `*.secret`, credentials files). A blocked attempt is logged, the run stops for human review, and the human sees what the agent wanted to do.
 
 The agent must report assumptions and cannot broaden scope silently. If it needs additional context or a contract change, it pauses and requests approval.
 
@@ -286,7 +292,7 @@ The Verifier produces a report containing:
 
 In the MVP the platform leaves the changes on an isolated local task branch and presents the diff and verification report as the review handoff. The user commits, pushes, and opens any pull request manually. GitHub integration and automatic pull requests are a **good-to-have option** (per-project `create_pull_request`, default off). The platform never merges automatically.
 
-The Jira lifecycle should be configurable but follow this default:
+The board `Status` options are configurable but follow this default:
 
 ```text
 Backlog -> TODO -> In Progress -> QA -> Done
@@ -326,7 +332,7 @@ flowchart LR
     SCM[Repository provider adapter]
     RUNNER[Isolated execution runner]
     VERIFY[Verification runner]
-    EXT[Optional Jira / Slack / Docs adapters]
+    EXT[GitHub MCP server / optional Slack / Docs adapters]
 
     UI --> API
     API --> AUTH
@@ -412,7 +418,9 @@ Responsibilities:
 - write acceptance criteria and test cases;
 - identify dependencies and affected domains;
 - prepare a proposed implementation plan;
-- compare proposed changes with the immutable approved plan and create Jira sub-task proposals for modifications;
+- classify the task type and score its complexity from 1 to 10; items above the project's complexity limit are flagged for splitting rather than run;
+- review recent failed runs for the same area so a failed approach is not repeated blindly;
+- compare proposed changes with the immutable approved plan and create GitHub sub-issue proposals for modifications;
 - state what the plan does not cover.
 
 Output: `WorkItem` and `ImplementationPlan` artifacts.
@@ -426,6 +434,8 @@ Responsibilities:
 - load approved conventions and architecture decisions;
 - produce a read/modify/protected path policy;
 - create a compact context package;
+- build a **Repo Map** (directory tree plus per-file path, language, exported symbols, and one-line description) within a configurable token budget (default 4000), cached and rebuilt only for files changed since the last build;
+- return the top-K relevant files (default 10) by keyword and symbol matching, and pass paths, not file contents, to later stages;
 - detect when the requested change lacks sufficient repository context.
 
 The context builder may begin with deterministic signals such as changed-history analysis, route maps, import graphs, and keyword search. Embedding search is useful later but must not be the only selection mechanism.
@@ -438,6 +448,7 @@ Responsibilities:
 - mount only approved inputs and tools;
 - run the Coding Agent with explicit budgets;
 - capture tool calls, output, changed files, and status;
+- install pre-execution guardrails (deny rules and a tool-call hook) that block dangerous commands and secret-file edits before they run;
 - enforce path and diff policies outside the model prompt;
 - stop on policy violation, timeout, or budget exhaustion;
 - return a structured run result.
@@ -452,7 +463,9 @@ Responsibilities:
 - enforce changed-file scope;
 - compare the diff with the implementation plan;
 - map acceptance criteria to tests or explicit evidence;
-- produce pass, fail, or needs-human-review status.
+- tell environment failures (tests could not start) from code failures, so an environment problem does not consume a retry;
+- produce pass, fail, or needs-human-review status;
+- include a suggested commit message in the report (the user still commits manually).
 
 ### 7.7 Human Gate service
 
@@ -477,7 +490,10 @@ Project Memory is a curated source of reusable context, not an uncontrolled tran
 - accepted terminology and glossary;
 - prior approved plans and review findings;
 - integration contracts;
-- known protected areas.
+- known protected areas;
+- **lessons learned**: when a human moves a ticket to Done, a short record of the issue, the files changed, and the approach that worked.
+
+Memory has three tiers. Working memory is the current task state, passed explicitly to each stage. Episodic memory is the recent run history for the project, used by the Planner to avoid repeating failures. Semantic memory is the lesson store, searched for the top three similar lessons before a run. Lessons are untrusted hints, never instructions.
 
 The first version can use PostgreSQL plus repository files. A vector index can be added only when retrieval benchmarks show a real benefit.
 
@@ -557,7 +573,7 @@ stateDiagram-v2
 - A transition is idempotent using a workflow ID and command ID.
 - Only the owning workflow activity may advance an automated state.
 - Human approval endpoints require the current artifact version.
-- External events (polled or webhook) are verified and deduplicated; a status change made directly in Jira is flagged, and the app never sets Done.
+- External events (polled or webhook) are verified and deduplicated; a status change made directly in GitHub is flagged, and the app never sets Done.
 - Any failed activity can be retried according to its retry policy.
 - A workflow can be resumed after a worker restart without repeating completed side effects.
 
@@ -684,15 +700,15 @@ POST   /api/requirement-packages/{id}/approve/
 POST   /api/projects/{project_id}/work-items/
 POST   /api/work-items/{id}/plan/
 POST   /api/implementation-plans/{id}/approve/
-POST   /api/implementation-plans/{id}/create-jira-issues/
+POST   /api/implementation-plans/{id}/create-issues/
 POST   /api/implementation-plans/{id}/plan-changes/
 POST   /api/plan-changes/{id}/approve/
     POST   /api/work-items/{id}/runs/
-    POST   /api/integrations/jira/webhook/
-POST   /api/jira-issues/{issue_key}/transition/
-POST   /api/jira-issues/{issue_key}/comments/
-POST   /api/jira-issues/{issue_key}/subtasks/
-GET    /api/jira-issues/{issue_key}/timeline/
+    POST   /api/integrations/github/webhook/
+POST   /api/issues/{issue_ref}/transition/
+POST   /api/issues/{issue_ref}/comments/
+POST   /api/issues/{issue_ref}/sub-issues/
+GET    /api/issues/{issue_ref}/timeline/
 GET    /api/runs/{run_id}/
 GET    /api/runs/{run_id}/artifacts/
 POST   /api/runs/{run_id}/cancel/
@@ -704,17 +720,17 @@ All mutation endpoints should accept an idempotency key. Long-running endpoints 
 
 ### 11.2 Repository integration
 
-The MVP repository integration is a **local git folder**. The internal interface keeps a provider boundary so GitHub (good-to-have) or others can be added later:
+The MVP repository integration is a **local git folder**. The internal interface keeps a provider boundary so GitHub pull-request support (good-to-have) or other providers can be added later:
 
 ```python
 class RepositoryProvider(Protocol):
     def get_default_branch(self, repository: str) -> str: ...
-    def create_task_branch(self, repository: str, ticket_key: str) -> Workspace: ...  # requires a clean tree
+    def create_task_branch(self, repository: str, issue_ref: str) -> Workspace: ...  # requires a clean tree
     def get_diff(self, workspace: Workspace) -> Diff: ...
     # Later (G1): push_branch, create_pull_request, get_pull_request_status
 ```
 
-The agent never commits to the default branch and nothing is pushed in the MVP. If GitHub is added later, the provider must never grant the Coding Agent a token capable of merging to the protected default branch.
+The agent never commits to the default branch and nothing is pushed in the MVP. If pull-request support is added later, the provider must never grant the Coding Agent a token capable of merging to the protected default branch. The GitHub token used by the MCP server is never passed to the Coding Agent.
 
 ### 11.3 Meeting-source integration
 
@@ -728,33 +744,33 @@ Mandatory inputs are live Take notes (browser mic and tab/system audio), uploade
 - source URL or reference;
 - ingestion time.
 
-### 11.4 Jira integration and Claude Code dispatch
+### 11.4 GitHub integration and Claude Code dispatch
 
-Jira is the first-class downstream execution queue for approved work items. Linear or Trello can be added later through the same adapter boundary. The Jira project is the customer's own. Jira should not be the only source of workflow truth because the platform needs artifact versions, approvals, execution policies, and verification evidence that issue trackers do not model consistently.
+GitHub Issues and a GitHub Projects (v2) board are the first-class downstream execution queue for approved work items, accessed through the **GitHub MCP server** (`issues` and `projects` toolsets). Linear or Trello can be added later through the same adapter boundary. The repository and Project are the customer's own. Two callers use the MCP server: the **Planner agent** with an allow-listed tool set (create issue, create sub-issue, add to project) to create tickets, and the **tracker adapter**, a deterministic MCP client with no LLM, for every status change, comment, poll, and reconciliation. The MCP server is the only holder of the GitHub token, and the token is scoped to one repository and Project. GitHub should not be the only source of workflow truth because the platform needs artifact versions, approvals, execution policies, and verification evidence that issue trackers do not model consistently.
 
 ```mermaid
 sequenceDiagram
     participant U as Reviewer
     participant T as TaskTraceAutomator
-    participant J as Jira
+    participant J as GitHub (MCP server)
     participant C as Claude Code
     participant R as Local repo folder
 
     U->>T: Approve implementation plan
-    T->>J: Create backlog issue(s) with traceability metadata
-    J-->>T: Return issue key(s)
+    T->>J: Planner agent creates backlog issue(s) via allow-listed MCP tools, adds to Project (Backlog)
+    J-->>T: Return issue reference(s) and Project item ID(s); app verifies and records
     U->>T: Move ticket to TODO (UI)
-    T->>J: Transition to TODO (audited)
+    T->>J: Set Status to TODO (deterministic MCP client, audited)
     T->>T: Validate approval, link, policy, and idempotency
-    T->>J: Transition issue to In Progress
+    T->>J: Set Status to In Progress
     T->>C: Dispatch approved ticket and bounded context
     C->>R: Edit code and tests on task branch
     T->>T: Run verification and traceability checks
-    T->>J: Add branch name, evidence, and status update
-    T->>J: Transition issue to QA or Blocked
+    T->>J: Comment branch name and evidence
+    T->>J: Set Status to QA or Blocked
 ```
 
-The integration must support both parent issues and sub-tasks. Polling is the default change feed because Jira Cloud cannot reach a local machine. If webhooks are enabled, the handler must verify the shared secret, ignore unrelated projects and issue types, and persist the event before dispatching work. A reconciliation job periodically compares Jira status with internal state so missed events do not strand tickets. Jira transitions, comments, and sub-task creation need idempotency keys, and both the parent issue key and sub-task key must be stored internally.
+The integration must support both parent issues and sub-issues. Polling is the default change feed because GitHub cannot reach a local machine. If webhooks are enabled, the handler must verify the `X-Hub-Signature-256` signature, ignore unrelated repositories and Projects, and persist the event before dispatching work. A reconciliation job periodically compares GitHub status with internal state so missed events do not strand tickets. GitHub transitions, comments, and sub-issue creation need idempotency keys, and both the parent issue reference and sub-issue reference must be stored internally.
 
 ---
 
@@ -782,7 +798,7 @@ The platform processes source code, meeting content, credentials, and potentiall
 - Per-integration scopes and short-lived credentials where available.
 - Isolated execution environments with no unrestricted network access.
 - Repository checkout at a pinned commit or reviewed ref.
-- File allow-list and protected-path enforcement outside the model.
+- Pre-execution blocking of dangerous commands and secret-file edits, plus file allow-list and protected-path enforcement outside the model after the run.
 - Maximum diff size, execution duration, turns, and model budget.
 - Secret scanning before artifacts leave the runner.
 - Redaction policy for transcripts, logs, and model telemetry.
@@ -819,7 +835,8 @@ The product should support configurable retention for recordings, transcripts, m
 | Object storage | S3-compatible storage | Recordings, transcripts, reports, logs, and patches |
 | Model access | Provider adapter with structured output validation | Allows model changes without rewriting domain workflows |
 | Transcription | Provider adapter; local faster-whisper for live Take notes | Transcribes live capture without a meeting-platform dependency |
-| Repository | Local git folder; provider adapter keeps GitHub possible later | Task-branch isolation with manual commit, push, and PR |
+| Repository | Local git folder; provider adapter keeps GitHub pull requests possible later | Task-branch isolation with manual commit, push, and PR |
+| Issue tracking | GitHub Issues and Projects (v2) through the GitHub MCP server | Planner agent creates tickets with allow-listed tools; a deterministic MCP client performs all status changes |
 | Execution | The customer's Claude Code on the local folder, on a task branch, with restricted tools and post-run scope checks | The agent must reach the user's local code |
 | Verification | Project commands plus SAST, secret scan, dependency audit | Evidence-based quality gate |
 | Frontend | Django-compatible web UI or separate TypeScript client | Fast review flows and artifact inspection |
@@ -836,7 +853,7 @@ The orchestration layer must distinguish:
 - **approval event:** an authorized human decision;
 - **external event:** a webhook or provider status update.
 
-Activities that call external systems must be idempotent or use a durable operation key. For example, creating a Jira ticket or transition should use a stored external reference and should not create a duplicate on retry.
+Activities that call external systems must be idempotent or use a durable operation key. For example, creating a GitHub issue or a Status change should use a stored external reference and should not create a duplicate on retry.
 
 ---
 
@@ -852,11 +869,11 @@ The MVP should support one narrow but complete path:
 4. The user edits and approves it.
 5. The platform creates one small work item and implementation plan.
 6. The user approves the plan and path policy.
-7. The platform creates linked Jira issue(s) in the backlog.
-8. Any post-approval plan modification becomes an approved Planner Agent sub-task under the parent issue.
-9. The user moves a backend parent issue or approved sub-task to TODO in the UI; this automatically starts one Claude Code run on the local backend folder, on a task branch.
+7. The platform creates linked GitHub issue(s) in the backlog.
+8. Any post-approval plan modification becomes an approved Planner Agent sub-issue under the parent issue.
+9. The user moves a backend parent issue or approved sub-issue to TODO in the UI; this automatically starts one Claude Code run on the local backend folder, on a task branch.
 10. The Verifier runs configured tests and scope checks.
-11. The platform comments the verification evidence and branch name on the Jira ticket and moves it to QA (or Blocked on failure).
+11. The platform comments the verification evidence and branch name on the GitHub issue and moves it to QA (or Blocked on failure).
 12. A human tests manually, commits and pushes as needed, and moves the ticket to Done when the definition of done is met.
 
 ### 14.2 Explicit MVP exclusions
@@ -865,7 +882,7 @@ The MVP should support one narrow but complete path:
 - Frontend code generation (next MVP).
 - Automatic commit, push, and pull requests (manual in the MVP).
 - Multiple simultaneous repositories per run.
-- Automatic issue creation in multiple trackers; Jira is the only issue tracker required for the MVP.
+- Automatic issue creation in multiple trackers; GitHub is the only issue tracker required for the MVP.
 - Autonomous merge or deployment.
 - Parallel specialist coding agents.
 - Full semantic code indexing before deterministic retrieval works.
@@ -899,6 +916,8 @@ The MVP should support one narrow but complete path:
 - Acceptance criteria and test-plan generation.
 - Repository profile and deterministic file retrieval.
 - Context package with allowed and protected paths.
+- Token-budgeted Repo Map, cached and invalidated by `git diff`.
+- Task type classification and complexity triage score.
 - Plan approval flow.
 
 **Exit criterion:** a reviewer can understand why each proposed file is in scope.
@@ -907,11 +926,13 @@ The MVP should support one narrow but complete path:
 
 - Isolated workspace creation.
 - Coding Agent runner with budgets.
+- Pre-execution guardrails and skills per task type.
 - External scope enforcement.
 - Test, lint, type-check, secret-scan, and diff checks.
-- Verification report and evidence links.
+- Verification report, evidence links, and a suggested commit message.
+- Environment-failure versus code-failure classification.
 
-**Exit criterion:** the system blocks deliberately bad runs and produces reviewable output for representative small tasks.
+**Exit criterion:** the system blocks deliberately bad runs, including dangerous commands before they run, and produces reviewable output for representative small tasks.
 
 #### Milestone 4 — Durable orchestration
 
@@ -927,6 +948,7 @@ The MVP should support one narrow but complete path:
 - Run a fixed evaluation set of historical meetings and repository tasks.
 - Compare against a single-agent baseline and human baseline.
 - Measure cost, quality, review time, and failure rate.
+- Compare runs with and without lesson memory.
 - Decide whether any specialist stage is justified.
 
 **Exit criterion:** the product has evidence for its next investment rather than assumptions about multi-agent value.
@@ -1024,7 +1046,7 @@ Prompts, schemas, model identifiers, and tool policies should be versioned like 
 ## 18. Open Decisions
 
 1. Decided: live Take notes, text file upload, and typed text are mandatory; audio file upload and YouTube are good-to-have.
-2. Decided: a local repository folder first; GitHub is a later good-to-have.
+2. Decided: a local repository folder first; automatic pull-request creation through GitHub is a later good-to-have. GitHub Issues and Projects (via the GitHub MCP server) are the tracker.
 3. Which durable workflow engine best fits the deployment and operational experience available?
 4. Decided: the customer's own Claude Code with their Anthropic API key. Whether to support a subscription login depends on Anthropic's terms.
 5. Will the first pilot target an existing Django repository, a different Python repository, or a small greenfield project?
@@ -1034,8 +1056,10 @@ Prompts, schemas, model identifiers, and tool policies should be versioned like 
 9. How should transcript deletion affect derived requirement packages and audit records?
 10. What evidence and Definition of Done are required before a human moves a ticket from QA to Done?
 11. Which specialist stage, if any, should be evaluated first after the MVP: testing, architecture/context, or database safety?
-12. Which Jira project, issue type, and status IDs will be used for the pilot?
+12. Which GitHub repository, Project number, labels, and `Status` field options will be used for the pilot, and will the GitHub MCP server run as a local Docker container or the hosted endpoint?
 13. What is the product name and positioning for the first pilot audience?
+14. What complexity limit should flag a work item for splitting, and which commands and file patterns belong on the blocked list for the pilot repository?
+15. Is a git worktree per task (isolation and parallel runs) worth adding after the MVP?
 
 ---
 
@@ -1045,7 +1069,7 @@ Prompts, schemas, model identifiers, and tool policies should be versioned like 
 
 Recommended positioning:
 
-> **TaskTraceAutomator — AI-assisted traceability from meeting decisions to Jira tickets and verified code changes.**
+> **TaskTraceAutomator — AI-assisted traceability from meeting decisions to GitHub issues and verified code changes.**
 
 Keep **TaskTraceAutomator** as the product/project name and use “AI-assisted” or “AI coding workflow” in the tagline, website copy, repository description, and UI. Add “AI” to the name only if discoverability in an AI-tool marketplace is more important than a durable, broader brand. Names such as **TaskTrace AI** are clearer at first glance but more generic.
 
@@ -1059,7 +1083,7 @@ Keep **TaskTraceAutomator** as the product/project name and use “AI-assisted�
 4. Add a hand-written context-package path and prove that the Coding Agent can produce a bounded diff.
 5. Add verification and scope enforcement before investing in richer retrieval.
 6. Add durable workflow execution and recovery tests.
-7. Add Jira connection, issue creation, Move to TODO, polling, TODO dispatch, move to QA, and status reconciliation.
+7. Add GitHub connection, issue creation, Move to TODO, polling, TODO dispatch, move to QA, and status reconciliation.
 8. Run the fixed evaluation set and compare the staged single-agent system with the manual baseline.
 9. Only then decide whether specialist agents create enough value to justify their complexity.
 

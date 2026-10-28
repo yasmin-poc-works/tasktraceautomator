@@ -24,8 +24,8 @@ Located in [`ui/`](ui/):
 - **[README.md](ui/README.md)**: Master design system, color tokens, and navigation map.
 - **[01_public_screens.md](ui/01_public_screens.md)**: Landing page, interactive demo, and public ticket traceability inspector.
 - **[02_meeting_and_transcription.md](ui/02_meeting_and_transcription.md)**: Audio dropzone, live transcription, and dual-pane requirements gate.
-- **[03_plan_and_jira_tickets.md](ui/03_plan_and_jira_tickets.md)**: Technical planning, scope allow-list, and Jira ticket generator modal.
-- **[04_jira_board_and_ticket_detail.md](ui/04_jira_board_and_ticket_detail.md)**: Traceable Jira Kanban board, sub-tasks, and ticket detail with audio replay.
-- **[05_project_settings_and_admin.md](ui/05_project_settings_and_admin.md)**: Jira Cloud integration credentials, project key mapping, and team roles.
+- **[03_plan_and_github_issues.md](ui/03_plan_and_github_issues.md)**: Technical planning, scope allow-list, and GitHub issue generator modal.
+- **[04_github_board_and_ticket_detail.md](ui/04_github_board_and_ticket_detail.md)**: Traceable GitHub Project board, sub-issues, and ticket detail with audio replay.
+- **[05_project_settings_and_admin.md](ui/05_project_settings_and_admin.md)**: GitHub MCP connection (token, repo, Project number), Status mapping, and team roles.
 
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tasktraceautomator"
 version = "0.1.0"
-description = "AI-assisted, traceable workflow from meeting decisions to Jira/GitHub tickets and reviewable code changes"
+description = "AI-assisted, traceable workflow from meeting decisions to GitHub tickets and reviewable code changes"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

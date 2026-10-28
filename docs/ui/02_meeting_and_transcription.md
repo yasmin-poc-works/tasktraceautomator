@@ -7,7 +7,7 @@ This module specifies the screens for uploading meeting audio or transcripts, ru
 ## 2.1 Meetings List (`/projects/:id/meetings`)
 
 ### Purpose
-Provides a paginated list of all recorded discussions, their transcription status, extracted requirement packages, and linked Jira ticket counts.
+Provides a paginated list of all recorded discussions, their transcription status, extracted requirement packages, and linked GitHub issue counts.
 
 ### ASCII Wireframe
 ```text
@@ -15,18 +15,18 @@ Provides a paginated list of all recorded discussions, their transcription statu
 |  [Logo] TaskTraceAutomator   Project: [Core API ▼]     [Meetings]  [Board]  [Settings]   [Alex (PO)] |
 +--------------------------------------------------------------------------------------------------+
 |  Project: Core API / Meetings                                                                    |
-|  Review meeting discussions, verify transcriptions, and approve requirements.                     |
+|  Review meeting discussions, verify transcriptions, and approve requirements.                    |
 |                                                                                                  |
 |  [ Search by title, tag, or attendee... ]       [ Status Filter: All ▼ ]     [ + New Meeting ]   |
 |                                                                                                  |
 |  +--------------------------------------------------------------------------------------------+  |
-|  | Title & Date             | Source       | Extracted Items | Jira Tickets | Status  | Action|  |
+|  | Title & Date             | Source       | Extracted Items | GitHub Issues | Status  | Action|  |
 |  |--------------------------+--------------+-----------------+--------------+---------+-------|  |
 |  | Sprint 42 Planning       | audio.mp3    | 6 Requirements  | 3 Stories    | APPROVED| [View]|  |
-|  | 2026-10-24 10:00 AM      | (18m 42s)    | 2 Open Questions| (PROJ-84..86)|         |       |  |
+|  | 2026-10-24 10:00 AM      | (18m 42s)    | 2 Open Questions| (#84..86)|         |           |  |
 |  |--------------------------+--------------+-----------------+--------------+---------+-------|  |
-|  | Billing API Architecture | notes.vtt    | 4 Requirements  | None         | IN REVIEW[Review]|
-|  | 2026-10-26 03:30 PM      | (Transcript) | 1 Open Question | (Pending sign)|         |       |  |
+|  | Billing API Architecture | notes.vtt    | 4 Requirements  | None         | IN REVIEW[Review]  |
+|  | 2026-10-26 03:30 PM      | (Transcript) | 1 Open Question | (Pending sign)|         |      |  |
 |  |--------------------------+--------------+-----------------+--------------+---------+-------|  |
 |  | Weekly Tech Sync         | recording.m4a| Processing...   | —            | TRANSCRIBING    |  |
 |  | 2026-10-28 11:00 AM      | (42m 10s)    | 74% complete    |              | [Progress Bar]  |  |
@@ -51,7 +51,7 @@ Allows authorized members to upload transcript files (`.txt`, `.md`, `.vtt`, `.s
 |  Upload Discussion Source                                                                        |
 |  Choose how you want to ingest the meeting decisions:                                            |
 |                                                                                                  |
-|  [ Tab: 🎙 Audio Recording ]          [ Tab: 📄 Text / VTT Transcript ]                          |
+|  [ Tab: 🎙 Audio Recording ]          [ Tab: 📄 Text / VTT Transcript ]                            |
 |                                                                                                  |
 |  +--------------------------------------------------------------------------------------------+  |
 |  |                                                                                            |  |
@@ -67,7 +67,7 @@ Allows authorized members to upload transcript files (`.txt`, `.md`, `.vtt`, `.s
 |  Meeting Title:        [ Sprint 43 Architecture Alignment                           ]            |
 |  Primary Language:     [ English (US) ▼ ]                                                        |
 |  Transcription Engine: [ faster-whisper (Local CPU - Zero Cost) ▼ ]                              |
-|  PII / Secret Redact:  [✓] Automatically redact detected API keys, passwords, and phone numbers   |
+|  PII / Secret Redact:  [✓] Automatically redact detected API keys, passwords, and phone numbers  |
 |                                                                                                  |
 |                                     [ Cancel ]     [ Start Transcription & Analysis ]            |
 |                                                                                                  |
@@ -126,7 +126,7 @@ The pivotal anti-vibe-coding gate. The Product Owner or Tech Lead inspects the m
 |  [Logo] TaskTraceAutomator   Sprint 43 Architecture Alignment   [Status: PENDING APPROVAL]       |
 +--------------------------------------------------------------------------------------------------+
 |  [ ◀ Back ]  Meeting Date: 2026-10-28  |  Duration: 18m 42s  |  Author: Sarah (PO)               |
-|                                                     [ + Add Requirement ]  [ APPROVE PACKAGE ✔ ]  |
+|                                                     [ + Add Requirement ]  [ APPROVE PACKAGE ✔ ] |
 +-------------------------------------------------+------------------------------------------------+
 |  LEFT PANE: Timestamped Transcript & Audio Play |  RIGHT PANE: Extracted Requirements & Questions|
 +-------------------------------------------------+------------------------------------------------+
@@ -134,29 +134,29 @@ The pivotal anti-vibe-coding gate. The Product Owner or Tech Lead inspects the m
 |  Audio Waveform: |||||||||||||||||||||||||||||| |                                                |
 |                                                 |  +------------------------------------------+  |
 |  [03:50] Mark (Engineer):                       |  | DECISION #1                   [Confidence 98%]
-|  "Are we building Jira integration or Github?"  |  | Target Issue Tracker is Jira Cloud.      |  |
-|                                                 |  | Spoken at: 04:12 by Sarah [Listen ▶]      |  |
+|  "Which tracker: GitHub Issues or Linear?"           |  | Target Issue Tracker is GitHub.        |  |
+|                                                 |  | Spoken at: 04:12 by Sarah [Listen ▶]     |  |
 |  [04:12] Sarah (Product Owner):                 |  | Linked Span: [04:12 - 04:30]             |  |
 |  >>> HIGHLIGHTED CYAN SPAN <<<                  |  +------------------------------------------+  |
-|  "We are definitely using Jira Cloud for this   |                                                |
+|  "We are definitely using GitHub for this                                                        |
 |  sprint. We need automated ticket creation with |  +------------------------------------------+  |
 |  all acceptance criteria so engineers don't     |  | FUNCTIONAL REQUIREMENT #1     [Confidence 94%]
-|  have to guess what we agreed."                 |  | Automated Jira Issue Creation:           |  |
-|  >>> END SPAN <<<                               |  | System must call Jira Cloud API v3 to    |  |
+|  have to guess what we agreed."                 |  | Automated GitHub Issue Creation:         |  |
+|  >>> END SPAN <<<                               |  | System must call GitHub MCP tools to     |  |
 |                                                 |  | create issues directly in the project    |  |
-|  [04:45] Mark:                                  |  | backlog with ADF formatted descriptions. |  |
+|  [04:45] Mark:                                  |  | backlog with Markdown descriptions.      |  |
 |  "What about changes to the approved plan?"     |  |                                          |  |
 |                                                 |  | Origin: Spoken by Sarah [04:12]          |  |
 |  [05:02] Sarah:                                 |  | Acceptance Criteria Preview:             |  |
 |  >>> HIGHLIGHTED PURPLE SPAN <<<                |  | • Given approved plan, When user clicks  |  |
-|  "If the plan changes, create a sub-task under  |  |   'Create Jira Ticket', Then POST issue. |  |
+|  "If the plan changes, create a sub-issue under  |  |   'Create GitHub Issue', Then create issue|  |
 |  the parent ticket. Never silently edit the     |  |                                          |  |
-|  original ticket."                              |  | [Edit ✎]  [Split ⑂]  [Delete 🗑]         |  |
+|  original ticket."                              |  | [Edit ✎]  [Split ⑂]  [Delete 🗑]          |  |
 |  >>> END SPAN <<<                               |  +------------------------------------------+  |
 |                                                 |                                                |
 |  [05:40] Dave (Security):                       |  +------------------------------------------+  |
 |  "API tokens should be encrypted in DB."        |  | ❓ OPEN QUESTION (Must resolve to approve)|  |
-|                                                 |  | Question: Which Jira issue type? Story or|  |
+|                                                 |  | Question: Which labels? backend or feature||  |
 |                                                 |  | Task?                                    |  |
 |                                                 |  | [ Enter answer / Decision...           ] |  |
 |                                                 |  | [ Resolve Question ✔ ]                   |  |

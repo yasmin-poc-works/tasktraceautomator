@@ -2,7 +2,7 @@
 
 **Plan:** [plan.md](plan.md) · **Status values:** `TODO` · `IN_PROGRESS` · `BLOCKED` · `COMPLETE`
 
-**How to update:** every task starts as `TODO`. Set `COMPLETE` only when done. Leave `IN_PROGRESS` or `BLOCKED` as is until the state changes. Add a dated comment (`YYYY-MM-DD: ...`) on every status change. A parent is `COMPLETE` only when all its subtasks are.
+**How to update:** every task starts as `TODO`. Set `COMPLETE` only when done. Leave `IN_PROGRESS` or `BLOCKED` as is until the state changes. Add a dated comment (`YYYY-MM-DD: ...`) on every status change. A parent is `COMPLETE` only when all its sub-issues are.
 
 **Roles:** Admin (Full access), Member (Approver access), Non-member (Viewer access). Viewer and Approver are access levels, not roles. See Architecture §9.3.
 
@@ -28,7 +28,7 @@
 | T0.2.d.3 | Route guards by role and access level; 401/403/404/error pages | §9.2, §9.3 | T0.2.d.2, T0.6.c | TODO | Guards hide UI only; the API enforces. |
 | T0.2.d.4 | App shell: sidebar, project switcher, user menu, sign out | §9.2 | T0.2.d.2 | TODO | |
 | T0.3 | Core data models and migrations | §8.2 | T0.2 | TODO | Project, Meeting, TranscriptSegment, artifacts, runs, approvals. |
-| T0.3.a | Project model including repo folder path, `accept_jira_side_moves` (default off), and `create_pull_request` (G1 only, default off) settings | §8.2 | T0.2 | TODO | Jira and Claude credentials are added in T3.1.b and T3.1.c. |
+| T0.3.a | Project model including repo folder path, `accept_github_side_moves` (default off), `max_complexity` (default 7), `repo_map_token_budget` (default 4000), and `create_pull_request` (G1 only, default off) settings | §8.2 | T0.2 | TODO | GitHub and Claude credentials are added in T3.1.b and T3.1.c. |
 | T0.3.b | Meeting, TranscriptSegment, RequirementPackage models | §8.2 | T0.2 | TODO | Segment checksums, versioned artifacts. |
 | T0.3.c | WorkItem, ImplementationPlan, PlanChange, CodingRun models | §8.2 | T0.2 | TODO | Unique constraint on active run per `work_item + plan_version`. |
 | T0.3.d | ExternalIssue, WebhookEvent, ActivityLog models | §8.2, §8.3 | T0.2 | TODO | Idempotency keys and external references. |
@@ -41,7 +41,7 @@
 | T0.6.d | Role-matrix tests: every action in §9.3 for each role | §9.3, §11 | T0.6.c | TODO | Table-driven. |
 | T0.6.e | Decide author-as-sole-approver policy | §9.3 | T0.6.c | TODO | Open question; record outcome in the comment. |
 | T0.7 | Foundation tests | §11 | T0.4, T0.5 | TODO | Exit check: transitions tested and idempotent. |
-| T0.8 | Projects list and project settings pages (`/projects`, `/projects/:id/settings`) | §9.2 | T0.2.d, T0.3.a | TODO | Settings are Admin only: members, repo folder, path policy, test commands. The Jira and Claude connection sections are added in T3.1.b and T3.1.c. |
+| T0.8 | Projects list and project settings pages (`/projects`, `/projects/:id/settings`) | §9.2 | T0.2.d, T0.3.a | TODO | Settings are Admin only: members, repo folder, path policy, test commands. The GitHub and Claude connection sections are added in T3.1.b and T3.1.c. |
 | T0.9 | Admin users page (`/admin/users`) | §9.2, §9.3 | T0.2.d, T0.6.c | TODO | Admin only: users, roles, project membership. |
 | T0.10 | Dashboard and Profile pages (`/`, `/profile`) | §9.2 | T0.2.d | TODO | Dashboard widgets fill in as later phases land. Profile has change password and sign out. |
 
@@ -83,12 +83,18 @@
 | T2.2.c | Django route and model discovery | §5.4 | T2.2.a | TODO | |
 | T2.2.d | Recent-change heat from `git log` | §5.4 | T2.2.a | TODO | |
 | T2.2.e | Assemble `ContextPackage` with reasons per file | §5.4 | T2.2.b, T2.2.c, T2.2.d | TODO | Reviewer must see why each file is in scope. |
+| T2.2.f | Repo Map builder: directory tree plus per-file entry (path, language, symbols, one line) within `repo_map_token_budget` | §5.4 | T2.2.b | TODO | Summarize or truncate least relevant directories first. |
+| T2.2.g | Repo Map cache on disk with `git diff` invalidation, and top-K keyword/symbol retrieval (K=10) | §5.4 | T2.2.f | TODO | Rebuild only changed files. Embeddings stay G6. |
+| T2.2.h | Context rule check: prompts and plans carry file paths only, never raw file contents | §5.4, §10 | T2.2.e | TODO | A test fails if file text appears in the prompt file. |
 | T2.3 | Planner | §5.3 | T1.5, T2.2 | TODO | |
 | T2.3.a | Generate `WorkItem` with Given/When/Then criteria and test plan | §5.3 | T1.5 | TODO | |
 | T2.3.b | Generate `ImplementationPlan` with allowed and protected paths, commands, diff budget | §5.3 | T2.3.a, T2.2.e | TODO | |
-| T2.4 | Plan review UI (React) with allow-list editing | §9.2 | T2.3, T0.2.d | TODO | Includes plan diff view for `PlanChange`. |
+| T2.3.c | Classify task type (`bug_fix`, `feature_addition`, `dependency_update`, `documentation`, `config_change`) and store it on the `WorkItem` | §5.3 | T2.3.a | TODO | Selects the coding skill in T4.3.a. Separate from the board category label. |
+| T2.3.d | Triage score 1–10 from Repo Map and criteria; flag `Needs split` above `max_complexity` | §5.3 | T2.3.a, T2.2.g | TODO | Flagged items cannot start a run until a human splits or accepts them. |
+| T2.3.e | Episodic memory: show recent failed or escalated runs for the same project and area to the reviewer | §5.3, §5.11 | T2.3.a | TODO | Read-only query over `CodingRun` and `AuditEvent`. Needs runs from Phase 4 to show data. |
+| T2.4 | Plan review UI (React) with allow-list editing | §9.2 | T2.3, T0.2.d | TODO | Includes plan diff view for `PlanChange`, and shows task type, triage score with the `Needs split` flag, and recent failed runs. |
 | T2.5 | Plan versioning and approval gate | §5.9 | T2.4 | TODO | |
-| T2.6 | `PlanChange` flow | §5.3 | T2.5 | TODO | Diff against the approved plan, reason, and approval; only approved changes become Jira sub-tasks later. |
+| T2.6 | `PlanChange` flow | §5.3 | T2.5 | TODO | Diff against the approved plan, reason, and approval; only approved changes become GitHub sub-issues later. |
 | T2.6.a | Plan change review page (`/plan-changes/:id`) and Approvals inbox (`/approvals`) | §9.2 | T2.6, T1.5, T0.2.d | TODO | Inbox lists pending requirements, plans, and plan changes. Member and Admin only. |
 | T2.7 | Phase 2 tests and exit check | §11 | T2.5 | TODO | Exit check: reviewer sees why each file is in scope. |
 
@@ -96,28 +102,31 @@
 
 | ID | Task | Arch ref | Depends on | Status | Comments |
 |---|---|---|---|---|---|
-| T3.1 | Jira tracker adapter foundation | §5.5 | P2 | TODO | The customer's own Jira Cloud project, Jira REST API v3, behind a `Protocol`. |
-| T3.1.a | Auth (site URL, email, API token), project key, issue-type and status mapping, cached transition IDs | §5.5 | P2 | TODO | Mapping covers Backlog, TODO, In Progress, QA, Blocked, Done. |
-| T3.1.b | Jira connection settings page and connection test | §5.5, §9.2 | T3.1.a, T0.8 | TODO | Admin only. Token stored encrypted and never returned. The test lists any missing statuses in the project's workflow. |
+| T3.0 | Spike (about one hour, by hand): through the GitHub MCP server, create an issue, add it to a Project board, set its Status, add a comment, add a sub-issue, and search by body marker, for both a personal and an organization board | §5.5 | P2 | TODO | Confirms the exact tool and method names (`issue_write`, `sub_issue_write`, `projects_write`, the add-item method) and the token scopes before T3.1 is built. Enable the `projects` toolset; it is off by default. Record findings in `docs/decisions/`. |
+| T3.1 | GitHub tracker adapter foundation | §5.5 | P2 | TODO | The customer's own GitHub repo Issues and Projects (v2) board, through the GitHub MCP server, behind a `Protocol`. Planner agent writes via allow-listed MCP tools; the app does all status changes as a deterministic MCP client. |
+| T3.1.a | Auth by board owner type (personal: owner login, repo, Project number, classic token with `project` and `repo`; organization: org login, repo, Project number, classic token or org-scoped fine-grained token), label set, and mapping of our states to the Project `Status` field options; cached field and option IDs | §5.5 | P2 | TODO | Mapping covers Backlog, TODO, In Progress, QA, Blocked, Done. |
+| T3.1.d | Add the GitHub MCP server (`issues` and `projects` toolsets) to Docker Compose and an MCP client wrapper in the adapter | §3, §5.5 | T3.1.a | TODO | The MCP server is the only holder of the GitHub token. The token is never passed to Claude Code. |
+| T3.1.b | GitHub connection settings page and connection test | §5.5, §9.2 | T3.1.a, T0.8 | TODO | Admin only. Token stored encrypted and never returned. The test lists any missing `Status` field options on the Project board and any missing MCP tools. |
 | T3.1.c | Claude connection settings: Anthropic API key (encrypted), model, local repo folder path, test commands | §5.7, §9.2 | T0.8 | TODO | Admin only. Connection test checks the CLI, the key, and that the folder is a git repo. A subscription login is not supported by default. |
 | T3.2 | Backlog ticket creation | §5.5 | T3.1 | TODO | |
-| T3.2.a | Create Jira issue with category labels and components (backend, frontend, bug, feature name) and an idempotency key | §5.5 | T3.1.a | TODO | Key = `work_item_id + plan_version`. |
-| T3.2.b | Store `ExternalIssue` references (Jira key and ID) | §5.5 | T3.2.a | TODO | |
-| T3.3 | Sub-task creation from approved `PlanChange` | §5.5 | T3.2, T2.6 | TODO | |
+| T3.2.a | Planner agent creates the GitHub issue and adds it to the Project (Backlog) with category labels (backend, frontend, bug, feature name) and an idempotency marker | §5.3, §5.5 | T3.1.a, T3.1.d | TODO | Key = `work_item_id + plan_version`, embedded as a hidden body marker and looked up before create. |
+| T3.2.c | Planner MCP tool allow-list enforced outside the prompt (create issue, create sub-issue, add to project only) with post-call verification and `AuditEvent` | §5.5, §10 | T3.1.d | TODO | No close, delete, edit-other-issue, or status-change tools are exposed to the agent. |
+| T3.2.b | Store `ExternalIssue` references (`owner/repo#number`, node ID, Project item ID) | §5.5 | T3.2.a | TODO | |
+| T3.3 | Sub-issue creation from approved `PlanChange` | §5.5 | T3.2, T2.6 | TODO | |
 | T3.4 | TaskTrace board UI and UI commands | §9.2 | T3.2, T0.2.d | TODO | Move, comment, assign, block/unblock; each writes an audit event. |
 | T3.4.a | Board with columns and cards (React): Backlog, TODO, In Progress, QA, Blocked, Done | §9.2 | T3.2 | TODO | |
-| T3.4.b | "Move to TODO" action and drag and drop (dnd-kit); card reverts if the backend rejects the move | §9.2, §7 | T3.4.a, T3.6 | TODO | The action calls our endpoint, which performs the Jira transition and writes the audit event. Backend remains the only authority on transitions. |
+| T3.4.b | "Move to TODO" action and drag and drop (dnd-kit); card reverts if the backend rejects the move | §9.2, §7 | T3.4.a, T3.6 | TODO | The action calls our endpoint, which updates the Project item's Status through the MCP client and writes the audit event. Backend remains the only authority on transitions. |
 | T3.4.c | Comment, assign, block/unblock dialogs and audit timeline view | §9.2 | T3.4.a | TODO | |
 | T3.4.d | Component tests and board drag-and-drop test | §11 | T3.4.b | TODO | |
-| T3.4.e | Ticket detail page (`/issues/:key`) | §9.2 | T3.4.a | TODO | Links to plan and requirements, comments, timeline. |
+| T3.4.e | Ticket detail page (`/issues/:issue_ref`) | §9.2 | T3.4.a | TODO | Links to plan and requirements, comments, timeline. |
 | T3.4.f | Audit timeline pages (per item and project-wide) | §9.2, §9.3 | T0.5, T0.2.d | TODO | Project-wide view is Admin only. |
 | T3.4.g | QA to Done action with Definition of Done checklist | §9.2, §5.5 | T3.4.a | TODO | Human only (Member or Admin). The app never sets Done by itself. |
 | T3.5 | Polling, optional webhooks, and reconciliation | §5.5 | T3.2 | TODO | |
-| T3.5.a | Optional webhook receiver with shared-secret verification | §5.5, §10 | T3.2 | TODO | Off by default; Jira Cloud cannot reach localhost. |
+| T3.5.a | Optional webhook receiver with shared-secret verification | §5.5, §10 | T3.2 | TODO | Off by default; GitHub cannot reach localhost. Verifies `X-Hub-Signature-256`. |
 | T3.5.b | Persist `WebhookEvent`, dedupe by event ID | §5.5 | T3.5.a | TODO | |
-| T3.5.c | JQL polling of the project (default) | §5.5, §15 | T3.2 | TODO | Every 30–60 s. This is the default change feed. |
-| T3.5.d | Beat reconciliation of Jira and internal state | §5.5 | T3.5.c | TODO | |
-| T3.6 | Illegal move detection | §5.5, §7 | T3.5.c, T0.4 | TODO | Moves found by polling that bypass our API are flagged with a comment and an audit event. A move to TODO starts a run only if `accept_jira_side_moves` is on (default off). |
+| T3.5.c | Polling of Project items and their Status through MCP (default) | §5.5, §15 | T3.2 | TODO | Every 30–60 s. This is the default change feed. |
+| T3.5.d | Beat reconciliation of GitHub and internal state | §5.5 | T3.5.c | TODO | |
+| T3.6 | Illegal move detection | §5.5, §7 | T3.5.c, T0.4 | TODO | Moves found by polling that bypass our API are flagged with a comment and an audit event. A move to TODO starts a run only if `accept_github_side_moves` is on (default off). |
 | T3.7 | Run trigger on move to TODO | §5.6 | T3.4.b, T3.6 | TODO | Validate project, `backend` category, approved plan link, no active run; create queued `CodingRun`. |
 | T3.8 | Phase 3 tests and exit check | §11 | T3.7 | TODO | Exit check: moving a ticket to TODO in the UI creates a queued run exactly once. |
 
@@ -127,10 +136,16 @@
 |---|---|---|---|---|---|
 | T4.1 | Local runner | §6 | P3 | TODO | Claude Code runs against the configured local repo folder. No container per run. |
 | T4.1.a | Worker image with git, Claude Code CLI, and test tools; repo folder mounted at the configured path | §6 | P3 | TODO | The runner must run on the same machine as the repo. |
-| T4.1.b | Clean-tree check and per-task branch creation (`tta/<ticket-key>`) | §6 | T4.1.a | TODO | A dirty tree blocks the run. Nothing is committed or pushed. |
+| T4.1.b | Clean-tree check and per-task branch creation (`tta/issue-<number>`) | §6 | T4.1.a | TODO | A dirty tree blocks the run. Nothing is committed or pushed. |
 | T4.1.c | Restricted Claude Code tool set and permission mode (edit files, run configured test and lint commands only) | §6 | T4.1.a | TODO | |
+| T4.1.d | Pre-execution guardrails: per-run Claude Code settings with deny rules and a `PreToolUse` hook blocking `rm -rf`, `curl`, `wget`, network installs, `git push`, out-of-repo paths, and edits to `.env`, `*.pem`, `*.key`, `*.secret`, `*credentials*` | §6 | T4.1.c | TODO | Confirm exact rule and hook syntax against current Claude Code docs first. Blocked attempts are written to `AuditEvent` and stop the run in `NEEDS_HUMAN_REVIEW`. |
+| T4.1.e | Guardrail tests: each blocked command and file pattern is rejected before it runs | §6, §11 | T4.1.d | TODO | Feeds the Phase 4 exit check. |
 | T4.2 | Runner lifecycle in Celery worker | §6 | T4.1 | TODO | Check tree, create branch, run agent, collect `result.json` and the diff. |
 | T4.3 | Prompt builder | §5.7 | T2.3 | TODO | Instructions kept separate from untrusted content. |
+| T4.3.a | Skills loader: structured skill objects (`name`, `instructions`, `workflow_steps`, `example_prompts`, `forbidden_actions`) in `prompts/skills/`, selected by task type; run records skill name and version | §5.7 | T4.3, T2.3.c | TODO | Versioned like prompts. |
+| T4.3.b | Author the MVP skills: `bug_fix`, `feature_addition`, `dependency_update`, `documentation`, `config_change` | §5.7 | T4.3.a | TODO | `bug_fix` starts with a failing test. |
+| T4.3.c | Inner-loop instructions (read, change plan, surgical edits, test, fix) and `proposed_diff.txt` plus `change_plan.md` as run artifacts | §5.7 | T4.3.a | TODO | Retry cap stays 2. |
+| T4.3.d | Inject up to 3 similar lessons into the prompt as labelled untrusted hints | §5.7, §5.11 | T4.3.a, T6.5 | TODO | Skipped when no lessons exist yet. |
 | T4.4 | Claude Code adapter (`claude -p`) | §5.7 | T4.2, T4.3 | TODO | Uses the user's API key from the encrypted setting. Turn, time, and cost budgets. Agent pauses and requests approval rather than widening scope. |
 | T4.5 | Verifier | §5.8 | T4.2 | TODO | |
 | T4.5.a | Run tests, lint, type checks | §5.8 | T4.2 | TODO | |
@@ -138,12 +153,14 @@
 | T4.5.c | Scope enforcement against allowed and protected paths and diff budget | §5.8, §10 | T4.2 | TODO | Failure blocks the move to QA; the ticket goes to Blocked. |
 | T4.5.d | Acceptance-criteria traceability mapping | §5.8 | T4.5.a | TODO | |
 | T4.5.e | Verification report generation | §5.8 | T4.5.a, T4.5.b, T4.5.c, T4.5.d | TODO | Includes cost, duration, assumptions, diff summary. |
-| T4.6 | Task branch handoff | §6, §5.6 | T4.5 | TODO | MVP handoff path: the user reviews the branch and commits, pushes, and opens PRs manually. GitHub is good-to-have G1. |
+| T4.5.f | Classify failures as `CODE_FAILURE` or `ENVIRONMENT_FAILURE`; environment failures do not use a retry and go to `NEEDS_HUMAN_REVIEW` | §5.8 | T4.5.a | TODO | Test command could not start, or collection failed before any test ran. |
+| T4.5.g | Suggested commit message in the verification report (`fix(#n): summary`, bullets, `Closes #n`) | §5.8 | T4.5.e | TODO | Text only; the user commits manually. |
+| T4.6 | Task branch handoff | §6, §5.6 | T4.5 | TODO | MVP handoff path: the user reviews the branch and commits, pushes, and opens PRs manually. Automatic PRs are good-to-have G1. |
 | T4.6.a | Leave the task branch with changes uncommitted or committed locally, no push | §6 | T4.5.e | TODO | G1.a adds the push later. |
 | T4.6.b | Branch name and diff summary on the ticket and run detail | §5.5 | T4.6.a | TODO | |
 | T4.7 | Move ticket to QA with evidence | §5.5 | T4.6 | TODO | App transitions In Progress → QA and comments the report and branch name. Done is human only. |
-| T4.8 | Run detail UI (React) | §9.2 | T4.5, T0.2.d | TODO | Live status via TanStack Query polling (3 s), logs, diff, report, branch name. |
-| T4.9 | Phase 4 tests and exit check | §11 | T4.7 | TODO | Exit check: an out-of-scope edit is blocked; a good run leaves a branch and moves the ticket to QA. |
+| T4.8 | Run detail UI (React) | §9.2 | T4.5, T0.2.d | TODO | Live status via TanStack Query polling (3 s), logs, diff, `proposed_diff.txt` and `change_plan.md`, report, branch name, skill used, and any blocked tool attempts with what the agent wanted to do. |
+| T4.9 | Phase 4 tests and exit check | §11 | T4.7 | TODO | Exit check: a blocked command or protected-file edit is stopped before it runs and logged; an out-of-scope edit is blocked; a good run leaves a branch and moves the ticket to QA. |
 
 ## Phase 5 — Hardening
 
@@ -152,7 +169,7 @@
 | T5.1 | Crash recovery | §5.6, §15 | P4 | TODO | `acks_late`, reject on worker lost, beat job re-enqueues stuck runs. |
 | T5.2 | Retry cap and failure escalation | §5.6 | P4 | TODO | Escalate to Blocked with a reason. |
 | T5.3 | Duplicate and delayed event tests (polling and optional webhooks) | §11 | P4 | TODO | |
-| T5.4 | Worker-restart-mid-run test | §11 | T5.1 | TODO | Exit check: no duplicate Jira tickets or runs. |
+| T5.4 | Worker-restart-mid-run test | §11 | T5.1 | TODO | Exit check: no duplicate GitHub issues or runs. |
 | T5.5 | Security review | §10 | P4 | TODO | Prompt-injection cases, credential storage, path-scope and clean-tree checks, content moderation bypass. |
 | T5.7 | Frontend end-to-end test of the core path (Playwright) | §11 | P4 | TODO | Take notes or upload, approve, move ticket to TODO, view report, move to Done. Optional if time is short. |
 | T5.6 | Observability baseline | §11 | P4 | TODO | Structured logs and basic metrics. Prometheus/Grafana are good-to-have G4. |
@@ -165,6 +182,7 @@
 | T6.2 | Run staged agent over the set | Plan §evaluation | T6.1 | TODO | Record pass rate, scope violations, cost, duration. |
 | T6.3 | Manual baseline for comparison | Plan §evaluation | T6.1 | TODO | |
 | T6.4 | Evaluation report | Plan §evaluation | T6.2, T6.3 | TODO | Decides whether specialist agents are justified (G8). |
+| T6.5 | Semantic memory: `Lesson` table written when a human moves QA → Done, and top-3 retrieval by task type, paths, and title | §5.11 | T4.7 | TODO | Compare runs with and without lessons in T6.2. |
 
 ---
 
@@ -174,11 +192,11 @@ These are not needed for the MVP exit checks. Build them only after the core pat
 
 | ID | Option | Arch ref | Depends on | Status | Comments |
 |---|---|---|---|---|---|
-| G1 | GitHub integration and pull request creation | §5.6, §6 | T4.6 | TODO | Per-project `create_pull_request` setting, default off. In the MVP commit, push, and PR are manual. |
-| G1.a | Push the task branch and add pull-request write to a scoped GitHub token | §6 | T4.6.a | TODO | Only when the setting is on. |
+| G1 | Automatic pull request creation (GitHub MCP) | §5.6, §6 | T4.6 | TODO | Per-project `create_pull_request` setting, default off. In the MVP commit, push, and PR are manual. |
+| G1.a | Push the task branch and add pull-request write to the scoped GitHub token held by the MCP server | §6 | T4.6.a | TODO | Only when the setting is on. |
 | G1.b | Open PR with `Closes #n`, idempotent via `ActivityLog` | §5.6, §8.3 | G1.a | TODO | Retry must never create a duplicate PR. |
-| G1.c | Link PR on the Jira ticket and run detail UI | §5.5, §9.2 | G1.b | TODO | |
-| G1.d | GitHub merge event comments on the Jira ticket | §5.5, §7 | G1.b | TODO | Done stays human only, even with G1. |
+| G1.c | Link PR on the GitHub issue and run detail UI | §5.5, §9.2 | G1.b | TODO | |
+| G1.d | GitHub merge event comments on the GitHub issue | §5.5, §7 | G1.b | TODO | Done stays human only, even with G1. |
 | G1.e | Tests: PR created once, none when setting is off | §11 | G1.b | TODO | |
 | G2 | Audio file upload and transcription (faster-whisper, CPU) | §5.1 | T1.1.e | TODO | Replaces T1.2. Reuses the transcription provider from T1.1.e. Live "Take notes" remains the primary path. |
 | G3 | MinIO object storage | §8.1 | T0.3 | TODO | Default is the local `artifacts/` volume. |
@@ -195,3 +213,4 @@ These are not needed for the MVP exit checks. Build them only after the core pat
 | G11.c | Blocker and stale-ticket nudges (comment or notification) | §5.5, §5.6 | T3.5.d | TODO | Reads board and run state; writes comments only. |
 | G11.d | Weekly progress summary (completed, blocked, cost, cycle time) | §11 | G11.c | TODO | Page or email digest. |
 | G12 | YouTube URL as a source | §5.1 | T1.1.e | TODO | Fetch captions first; download audio and transcribe only as a fallback for videos the user is authorised to use (ToS risk). Implemented later. |
+| G13 | Git worktree per task | §6 | T4.1 | TODO | Separate checkout outside the user's folder: the user keeps working during a run and runs can be parallel. MVP keeps clean-tree check and task branch. |

@@ -7,7 +7,7 @@ This module details the screens accessible to external visitors and unauthentica
 ## 1.1 Public Landing Page (`/`)
 
 ### Purpose
-Communicates the core value proposition: stopping "vibe coding" errors by establishing a bulletproof audit trail from meeting audio to Jira tickets and verified code.
+Communicates the core value proposition: stopping "vibe coding" errors by establishing a bulletproof audit trail from meeting audio to GitHub issues and verified code.
 
 ### ASCII Wireframe
 ```text
@@ -16,27 +16,27 @@ Communicates the core value proposition: stopping "vibe coding" errors by establ
 +--------------------------------------------------------------------------------------------------+
 |                                                                                                  |
 |   [ Badge: Anti-Vibe-Coding Platform ]                                                           |
-|   Turn Meeting Decisions into Auditable Jira Tickets & Verified Code                             |
+|   Turn Meeting Decisions into Auditable GitHub Issues & Verified Code                            |
 |                                                                                                  |
 |   Stop losing requirements in chat prompts. TaskTraceAutomator transcribes your sprint planning, |
-|   extracts verified acceptance criteria with timestamps, and generates traceable Jira tickets.   |
+|   extracts verified acceptance criteria with timestamps, and generates traceable GitHub issues.  |
 |                                                                                                  |
 |              [ Explore Live Demo ]          [ Sign In to Workspace ]                             |
 |                                                                                                  |
 |--------------------------------------------------------------------------------------------------|
-|   Interactive Comparison: Why "Vibe Coding" Fails vs. TaskTraceAutomator                        |
+|   Interactive Comparison: Why "Vibe Coding" Fails vs. TaskTraceAutomator                         |
 |                                                                                                  |
 |   [ Traditional "Vibe Coding" ]                 |   [ TaskTraceAutomator Governed Flow ]         |
-|   X Meeting decisions lost in chat history       |   ✓ Every ticket cites exact audio timestamp   |
+|   X Meeting decisions lost in chat history       |   ✓ Every ticket cites exact audio timestamp  |
 |   X AI silently modifies out-of-scope files     |   ✓ Strict file allow-lists & human sign-off   |
-|   X Untraceable bugs; no Jira tickets created   |   ✓ Jira backlog tickets created automatically |
+|   X Untraceable bugs; no GitHub issues created   |   ✓ GitHub backlog tickets created automatically |
 |   X No proof that code satisfies DoD            |   ✓ Verification scanner maps tests to criteria|
 |                                                                                                  |
 |--------------------------------------------------------------------------------------------------|
 |   How It Works in 3 Steps:                                                                       |
 |                                                                                                  |
-|   [ 1. Transcribe & Ground ]      [ 2. Plan & Human Gate ]        [ 3. Traceable Jira Tickets ]  |
-|   Upload audio or notes. Every    Review extracted items. PO      Auto-creates Jira tickets with |
+|   [ 1. Transcribe & Ground ]      [ 2. Plan & Human Gate ]        [ 3. Traceable GitHub Issues ] |
+|   Upload audio or notes. Every    Review extracted items. PO      Auto-creates GitHub issues with |
 |   requirement links to a speaker  signs off before any technical  acceptance criteria and links  |
 |   and timestamp.                  plan is generated.              to the meeting recording.      |
 |                                                                                                  |
@@ -46,7 +46,7 @@ Communicates the core value proposition: stopping "vibe coding" errors by establ
 ### Components & Interaction Design
 - **Hero CTA**: "Explore Live Demo" deep-links directly to `/demo` with zero login required.
 - **Interactive Provenance Visualizer**: A visual pill that lets the user click:
-  `[PO @ 04:12: "We must enforce JWT auth with 15min expiry"]` $\longrightarrow$ `[Jira Ticket: PROJ-102 Acceptance Criteria #2]`
+  `[PO @ 04:12: "We must enforce JWT auth with 15min expiry"]` $\longrightarrow$ `[GitHub Issue: #102 Acceptance Criteria #2]`
 - **Footer**: Links to OpenAPI docs (`/api/docs/`), GitHub repository, and architecture documentation.
 
 ---
@@ -54,21 +54,21 @@ Communicates the core value proposition: stopping "vibe coding" errors by establ
 ## 1.2 Public Interactive Demo (`/demo`)
 
 ### Purpose
-Allows any prospective user, manager, or stakeholder to interactively experience the meeting-to-Jira flow in read-only mode using a pre-loaded sample sprint meeting.
+Allows any prospective user, manager, or stakeholder to interactively experience the meeting-to-GitHub flow in read-only mode using a pre-loaded sample sprint meeting.
 
 ### ASCII Wireframe
 ```text
 +--------------------------------------------------------------------------------------------------+
 |  [Logo] TaskTraceAutomator   [Interactive Demo: Sprint Planning 42]   [Sign In to Create Project]|
 +--------------------------------------------------------------------------------------------------+
-|  [Banner: Interactive Sandbox — Read Only. Click any sentence below to see its linked Jira ticket]  |
+|  [Banner: Interactive Sandbox — Read Only. Click any sentence below to see its linked GitHub issue]  |
 +-------------------------------------------------+------------------------------------------------+
-|  LEFT: Spoken Meeting Transcript                |  RIGHT: Extracted Traceable Jira Ticket        |
+|  LEFT: Spoken Meeting Transcript                |  RIGHT: Extracted Traceable GitHub Issue       |
 +-------------------------------------------------+------------------------------------------------+
-|  [>] 00:00 / 08:35  [====|==============]  1.0x |  Jira Key: [PROJ-84]  Type: [Story]  Status: [TODO]
+|  [>] 00:00 / 08:35  [====|==============]  1.0x |  Issue: [acme/core-platform#84]  Type: [Story]  Status: [TODO]
 |                                                 |  Summary: Add JWT Bearer Auth with Token Rotation|
 |  [01:14] Sarah (Product Owner):                 |                                                |
-|  "Let's make sure authentication uses JWT with  |  Origin: Spoken by Sarah at 01:14 [Listen ▶]    |
+|  "Let's make sure authentication uses JWT with  |  Origin: Spoken by Sarah at 01:14 [Listen ▶]   |
 |  a 15-minute access token. Refresh token should |                                                |
 |  last for 7 days."                              |  Acceptance Criteria (Given/When/Then):        |
 |                                                 |  • Given valid credentials, When user logs in, |
@@ -83,7 +83,7 @@ Allows any prospective user, manager, or stakeholder to interactively experience
 |                                                 |  [x] Blacklist app enabled in Django           |
 |                                                 |  [x] Memory-only token store in React client   |
 |                                                 |                                                |
-|                                                 |  [ View in Jira Cloud ↗ ]  [ Inspect Audit Trail ]
+|                                                 |  [ View in GitHub ↗ ]  [ Inspect Audit Trail ]
 +-------------------------------------------------+------------------------------------------------+
 ```
 
@@ -95,10 +95,10 @@ Allows any prospective user, manager, or stakeholder to interactively experience
 
 ---
 
-## 1.3 Public Ticket Traceability Inspector (`/trace/:ticket_key`)
+## 1.3 Public Ticket Traceability Inspector (`/trace/:issue_ref`)
 
 ### Purpose
-A public, shareable permalink that anyone (including clients, security auditors, or team members without direct platform accounts) can use to audit the origin and verification of a specific Jira ticket.
+A public, shareable permalink that anyone (including clients, security auditors, or team members without direct platform accounts) can use to audit the origin and verification of a specific GitHub issue.
 
 ### ASCII Wireframe
 ```text
@@ -106,7 +106,7 @@ A public, shareable permalink that anyone (including clients, security auditors,
 |  [Logo] TaskTraceAutomator                Traceability Verification Report        [Verify Another]|
 +--------------------------------------------------------------------------------------------------+
 |                                                                                                  |
-|   Ticket Key: PROJ-84  |  Project: Core Platform  |  Approved By: Alex (PO) on 2026-10-24         |
+|   Issue: acme/core-platform#84  |  Project: Core Platform  |  Approved By: Alex (PO) on 2026-10-24            |
 |   Summary: Implement JWT Bearer Authentication and Refresh Rotation                              |
 |                                                                                                  |
 |   PROVENANCE CHAIN                                                                               |
@@ -116,19 +116,19 @@ A public, shareable permalink that anyone (including clients, security auditors,
 |   Recorded in: "Sprint 42 Architecture Alignment" on 2026-10-24 10:00 AM                         |
 |   Audio Segment: 01:14 - 02:30 (Speaker: Sarah, Product Owner)                                   |
 |   Spoken Intent: "Let's make sure authentication uses JWT with a 15-minute access token..."      |
-|   [ Play Audio Snippet ▶ ]                                                                        |
+|   [ Play Audio Snippet ▶ ]                                                                       |
 |                                                                                                  |
 |   [ 2. Human Approval Gate ]                                                                     |
 |   Approved By: Alex Rivera (Approver) at 2026-10-24 11:15 AM UTC                                 |
 |   Plan Version: v1.0 (Immutable SHA-256: 8f2b...c41a)                                            |
 |                                                                                                  |
-|   [ 3. Jira Backlog Synchronization ]                                                            |
-|   Jira Issue Created: PROJ-84 at 2026-10-24 11:16 AM UTC                                        |
-|   Direct Jira Link: https://tasktrace.atlassian.net/browse/PROJ-84 [Open Jira ↗]                 |
+|   [ 3. GitHub Backlog Synchronization ]                                                          |
+|   GitHub Issue Created: #84 at 2026-10-24 11:16 AM UTC                                           |
+|   Direct GitHub Link: https://github.com/acme/core-platform/issues/84 [Open GitHub ↗]            |
 |                                                                                                  |
 |   [ 4. Verification & Evidence ]                                                                 |
-|   Code Branch: tta/issue-PROJ-84                                                                 |
-|   Tests Passing: 14/14 unit tests | Scope check: 100% within allowed paths                        |
+|   Code Branch: tta/issue-84                                                                      |
+|   Tests Passing: 14/14 unit tests | Scope check: 100% within allowed paths                       |
 |                                                                                                  |
 +--------------------------------------------------------------------------------------------------+
 ```
